@@ -1,70 +1,39 @@
 package rtalk;
 
-/**
- * <pre>
+import static java.lang.Long.signum;
+import static rtalk.RTalk.PutResponse.INSERTED;
 
-Job Lifecycle
--------------
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
-A job in beanstalk gets created by a client with the "put" command. During its
-life it can be in one of four states: "ready", "reserved", "delayed", or
-"buried". After the put command, a job typically starts out ready. It waits in
-the ready queue until a worker comes along and runs the "reserve" command. If
-this job is next in the queue, it will be reserved for the worker. The worker
-will execute the job; when it is finished the worker will send a "delete"
-command to delete the job.
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.vg.db.RedisDao;
 
-Here is a picture of the typical job lifecycle:
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Transaction;
+import rtalk.RTalk.PutResponse;
 
-   put            reserve               delete
-  -----> [READY] ---------> [RESERVED] --------> *poof*
+public class RTalk extends RedisDao {
 
-Here is a picture with more possibilities:
+    private static final String TOUCHED = "TOUCHED";
+    private static final String BURIED = "BURIED";
+    private static final String RELEASED = "RELEASED";
+    private static final String NOT_FOUND = "NOT_FOUND";
 
+    public RTalk(JedisPool jedis) {
+        super(jedis);
+    }
 
-
-   put with delay               release with delay
-  ----------------> [DELAYED] <------------.
-                        |                   |
-                        | (time passes)     |
-                        |                   |
-   put                  v     reserve       |       delete
-  -----------------> [READY] ---------> [RESERVED] --------> *poof*
-                       ^  ^                |  |
-                       |   \  release      |  |
-                       |    `-------------'   |
-                       |                      |
-                       | kick                 |
-                       |                      |
-                       |       bury           |
-                    [BURIED] <---------------'
-                       |
-                       |  delete
-                        `--------> *poof*
-
-
-The system has one or more tubes. Each tube consists of a ready queue and a
-delay queue. Each job spends its entire life in one tube. Consumers can show
-interest in tubes by sending the "watch" command; they can show disinterest by
-sending the "ignore" command. This set of interesting tubes is said to be a
-consumer's "watch list". When a client reserves a job, it may come from any of
-the tubes in its watch list.
-
-When a client connects, its watch list is initially just the tube named
-"default". If it submits jobs without having sent a "use" command, they will
-live in the tube named "default".
-
-Tubes are created on demand whenever they are referenced. If a tube is empty
-(that is, it contains no ready, delayed, or buried jobs) and no client refers
-to it, it will be deleted.
-
- * </pre>
- * 
- * @author zhukov
- *
- */
-public class RTalk {
-    private String tube;
+    private String tube = "default";
 
     /**
      * use <tube>\r\n
@@ -141,12 +110,99 @@ public class RTalk {
      * issued, jobs will be put into the tube named "default".
      */
     public static class PutResponse {
+        public PutResponse(String status, String id) {
+            this.status = status;
+            this.id = id;
+        }
+
+        public static String INSERTED = "INSERTED";
+        public static String BURIED = "BURIED";
+        public static String EXPECTED_CRLF = "EXPECTED_CRLF";
+        public static String JOB_TOO_BIG = "JOB_TOO_BIG";
+        public static String DRAINING = "DRAINING";
+
         public String status;
         public String id;
     }
 
-    public PutResponse put(long pri, long delay, long ttr, String data) {
-        return new PutResponse();
+    public static class Job {
+        public static String DELAYED = "DELAYED";
+        public static String READY = "READY";
+        public static String RESERVED = "RESERVED";
+        public static String BURIED = "BURIED";
+
+        public String id;
+        public long ttrMsec;
+        public String data;
+        public String state;
+        public long pri;
+        public String tube;
+        public long reserves;
+        public long releases;
+        public long buries;
+        public long kicks;
+        public long timeouts;
+        public long readyTime;
+        public long ctime;
+        public long now;
+
+        /**
+         * - "age" is the time in seconds since the put command that created
+         * this job.
+         */
+        public long age() {
+            return now - ctime;
+        }
+
+        /**
+         * - "time-left" is the number of seconds left until the server puts
+         * this job into the ready queue. This number is only meaningful if the
+         * job is reserved or delayed. If the job is reserved and this amount of
+         * time
+         */
+        public long timeLeft() {
+            return readyTime - now;
+        }
+
+    }
+
+    public PutResponse put(long pri, long delayMsec, long ttrMsec, String data) {
+        String id = UUID.randomUUID()
+                        .toString();
+        long _ttrMsec = Math.max(1000, ttrMsec);
+        String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
+        return withRedisTransaction(r -> {
+            long now = System.currentTimeMillis();
+            long readyTimeMsec = now + delayMsec;
+            r.zadd(kReadyQueue(), readyTimeMsec, id);
+            r.hset(kJob(id), fPriority, Long.toString(pri));
+            r.hset(kJob(id), fTtr, Long.toString(_ttrMsec));
+            r.hset(kJob(id), fData, data);
+            r.hset(kJob(id), fState, status);
+            r.hset(kJob(id), fCtime, Long.toString(now));
+            r.hset(kJob(id), fTube, tube);
+            return new PutResponse(INSERTED, id);
+        });
+    }
+
+    private static final String fTube = "tube";
+    private static final String fState = "state";
+    private static final String fPriority = "pri";
+    private static final String fReserves = "reserves";
+    private static final String fCtime = "ctime";
+    private static final String fTtr = "ttr";
+    private static final String fData = "data";
+    private static final String fTimeouts = "timeouts";
+    private static final String fReleases = "releases";
+    private static final String fBuries = "buries";
+    private static final String fKicks = "kicks";
+
+    private String kJob(String id) {
+        return "job_" + id;
+    }
+
+    private String kReadyQueue() {
+        return tube + "_readyQueue";
     }
 
     /**
@@ -215,14 +271,69 @@ public class RTalk {
     }
 
     public static class ReserveResponse {
+        public ReserveResponse(String status, String id, String data) {
+            this.status = status;
+            this.id = id;
+            this.data = data;
+        }
+
+        public static String RESERVED = "RESERVED";
+        public static String TIMED_OUT = "TIMED_OUT";
+        public static String DEADLINE_SOON = "DEADLINE_SOON";
+
         public String status;
         public String id;
         public String data;
     }
 
-    public ReserveResponse reserve(long timeoutMsec) {
-        ReserveResponse response = new ReserveResponse();
-        return response;
+    public ReserveResponse reserve(long blockTimeoutMsec) {
+        long now = System.currentTimeMillis();
+        Optional<Job> firstJob = withRedis(r -> {
+            Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
+            Optional<Job> firstJob_ = ids.stream()
+                                         .map(id -> _getJob(r, id))
+                                         .filter(j -> Job.DELAYED.equals(j.state) || Job.READY.equals(j.state))
+                                         .sorted((j1, j2) -> signum(j1.pri - j2.pri))
+                                         .findFirst();
+            return firstJob_;
+        });
+
+        if (firstJob.isPresent()) {
+            Job j = firstJob.get();
+            return withRedisTransaction(r -> {
+                r.hset(kJob(j.id), fState, Job.RESERVED);
+                r.zadd(kReadyQueue(), System.currentTimeMillis() + j.ttrMsec, j.id);
+                r.hincrBy(kJob(j.id), fReserves, 1);
+                return new ReserveResponse(ReserveResponse.RESERVED, j.id, j.data);
+            });
+        }
+        return new ReserveResponse(ReserveResponse.TIMED_OUT, null, null);
+    }
+
+    private Job _getJob(Jedis r, String id) {
+        long now = System.currentTimeMillis();
+        Map<String, String> job = r.hgetAll(kJob(id));
+        if (job == null || job.isEmpty())
+            return null;
+        Job j = new Job();
+        Double readyTime = r.zscore(kReadyQueue(), id);
+        if (readyTime != null) {
+            j.readyTime = readyTime.longValue();
+        }
+        j.tube = job.get(fTube);
+        j.state = job.get(fState);
+        j.pri = toLong(job.get(fPriority));
+        j.data = job.get(fData);
+        j.ttrMsec = toLong(job.get(fTtr));
+        j.id = id;
+        j.reserves = toLong(job.get(fReserves));
+        j.releases = toLong(job.get(fReleases));
+        j.buries = toLong(job.get(fBuries));
+        j.kicks = toLong(job.get(fKicks));
+        j.timeouts = toLong(job.get(fTimeouts));
+        j.ctime = toLong(job.get(fCtime));
+        j.now = now;
+        return j;
     }
 
     /**
@@ -244,7 +355,17 @@ public class RTalk {
      * before the client sent the delete command.
      */
     public String delete(String id) {
-        return "NOT_FOUND";
+        Double score = withRedis(r -> {
+            return r.zscore(kReadyQueue(), id);
+        });
+        if (score == null) {
+            return NOT_FOUND;
+        }
+        return withRedisTransaction(r -> {
+            r.zrem(kReadyQueue(), id);
+            r.del(kJob(id));
+            return "DELETED";
+        });
     }
 
     /**
@@ -272,8 +393,21 @@ public class RTalk {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public String release(String id) {
-        return "NOT_FOUND";
+    public String release(String id, long pri, long delayMsec) {
+        if (contains(id)) {
+            return withRedisTransaction(tx -> {
+                tx.zadd(kReadyQueue(), System.currentTimeMillis() + delayMsec, id);
+                tx.hset(kJob(id), fPriority, Long.toString(pri));
+                tx.hset(kJob(id), fState, delayMsec > 0 ? Job.DELAYED : Job.READY);
+                tx.hincrBy(kJob(id), fReleases, 1);
+                return RELEASED;
+            });
+        }
+        return NOT_FOUND;
+    }
+
+    public boolean contains(String id) {
+        return withRedis(r -> r.exists(kJob(id)));
     }
 
     /**
@@ -297,7 +431,21 @@ public class RTalk {
      * client.
      */
     public String bury(String id, long pri) {
-        return "NOT_FOUND";
+        if (contains(id)) {
+            return withRedisTransaction(tx -> {
+                tx.zrem(kReadyQueue(), id);
+                tx.hset(kJob(id), fPriority, Long.toString(pri));
+                tx.hset(kJob(id), fState, Job.BURIED);
+                tx.hincrBy(kJob(id), fBuries, 1);
+                tx.zadd(kBuried(), System.currentTimeMillis(), id);
+                return BURIED;
+            });
+        }
+        return NOT_FOUND;
+    }
+
+    private String kBuried() {
+        return tube + "_buried";
     }
 
     /**
@@ -323,7 +471,161 @@ public class RTalk {
      * client.
      */
     public String touch(String id) {
-        return "NOT_FOUND";
+        Job j = withRedis(r -> _getJob(r, id));
+        if (j != null) {
+            withRedis(r -> {
+                r.zincrby(kReadyQueue(), j.ttrMsec, id);
+                return TOUCHED;
+            });
+        }
+        return NOT_FOUND;
+    }
+
+    public static long toLong(Object object) {
+        return toLong(object, 0);
+    }
+
+    public static long toLong(Object object, long defaultValue) {
+        if (object == null) {
+            return defaultValue;
+        }
+        if (object instanceof Number) {
+            return ((Number) object).longValue();
+        } else if (object instanceof String) {
+            try {
+                return Long.parseLong((String) object);
+            } catch (NumberFormatException nfe) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * The kick command applies only to the currently used tube. It moves jobs
+     * into the ready queue. If there are any buried jobs, it will only kick
+     * buried jobs. Otherwise it will kick delayed jobs. It looks like:
+     * 
+     * kick <bound>\r\n
+     * 
+     * - <bound> is an integer upper bound on the number of jobs to kick. The
+     * server will kick no more than <bound> jobs.
+     * 
+     * The response is of the form:
+     * 
+     * KICKED <count>\r\n
+     * 
+     * - <count> is an integer indicating the number of jobs actually kicked.
+     */
+    public int kick(int bound) {
+        long now = System.currentTimeMillis();
+        Set<String> ids = withRedis(r -> {
+            if (r.zcard(kBuried()) > 0) {
+                return r.zrange(kBuried(), 0, bound);
+            } else {
+                return r.zrangeByScore(kReadyQueue(), now, -1, 0, bound);
+            }
+        });
+        if (ids.isEmpty())
+            return 0;
+
+        withRedisTransaction(tx -> {
+            for (String id : ids) {
+                tx.zrem(kBuried(), id);
+                tx.hset(kJob(id), fState, Job.READY);
+                tx.hincrBy(kJob(id), fKicks, 1);
+                tx.zadd(kReadyQueue(), now, id);
+            }
+        });
+        return ids.size();
+    }
+
+    /**
+     * The kick-job command is a variant of kick that operates with a single job
+     * identified by its job id. If the given job id exists and is in a buried
+     * or delayed state, it will be moved to the ready queue of the the same
+     * tube where it currently belongs. The syntax is:
+     * 
+     * kick-job <id>\r\n
+     * 
+     * - <id> is the job id to kick.
+     * 
+     * The response is one of:
+     * 
+     * - "NOT_FOUND\r\n" if the job does not exist or is not in a kickable
+     * state. This can also happen upon internal errors.
+     * 
+     * - "KICKED\r\n" when the operation succeeded.
+     */
+    public String kickJob(String id) {
+        if (contains(id)) {
+            long now = System.currentTimeMillis();
+            withRedisTransaction(tx -> {
+                tx.zrem(kBuried(), id);
+                tx.hset(kJob(id), fState, Job.READY);
+                tx.hincrBy(kJob(id), fKicks, 1);
+                tx.zadd(kReadyQueue(), now, id);
+            });
+        }
+        return NOT_FOUND;
+    }
+
+    /**
+     * The stats-job command gives statistical information about the specified
+     * job if it exists. Its form is:
+     * 
+     * stats-job <id>\r\n
+     * 
+     * - <id> is a job id.
+     * 
+     * The response is one of:
+     * 
+     * - "NOT_FOUND\r\n" if the job does not exist.
+     * 
+     * - "OK <bytes>\r\n<data>\r\n"
+     * 
+     * - <bytes> is the size of the following data section in bytes.
+     * 
+     * - <data> is a sequence of bytes of length <bytes> from the previous line.
+     * It is a YAML file with statistical information represented a dictionary.
+     * 
+     * The stats-job data is a YAML file representing a single dictionary of
+     * strings to scalars. It contains these keys:
+     * 
+     * - "id" is the job id
+     * 
+     * - "tube" is the name of the tube that contains this job
+     * 
+     * - "state" is "ready" or "delayed" or "reserved" or "buried"
+     * 
+     * - "pri" is the priority value set by the put, release, or bury commands.
+     * 
+     * - "age" is the time in seconds since the put command that created this
+     * job.
+     * 
+     * - "time-left" is the number of seconds left until the server puts this
+     * job into the ready queue. This number is only meaningful if the job is
+     * reserved or delayed. If the job is reserved and this amount of time
+     * elapses before its state changes, it is considered to have timed out.
+     * 
+     * - "file" is the number of the earliest binlog file containing this job.
+     * If -b wasn't used, this will be 0.
+     * 
+     * - "reserves" is the number of times this job has been reserved.
+     * 
+     * - "timeouts" is the number of times this job has timed out during a
+     * reservation.
+     * 
+     * - "releases" is the number of times a client has released this job from a
+     * reservation.
+     * 
+     * - "buries" is the number of times this job has been buried.
+     * 
+     * - "kicks" is the number of times this job has been kicked.
+     */
+
+    public Job statsJob(String id) {
+        return withRedis(r -> _getJob(r, id));
     }
 
 }
