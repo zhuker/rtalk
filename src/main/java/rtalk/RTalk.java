@@ -1,6 +1,7 @@
 package rtalk;
 
 import static java.lang.Long.signum;
+import static java.util.UUID.randomUUID;
 import static rtalk.RTalk.PutResponse.INSERTED;
 
 import java.util.Collections;
@@ -24,13 +25,19 @@ import rtalk.RTalk.PutResponse;
 
 public class RTalk extends RedisDao {
 
-    private static final String TOUCHED = "TOUCHED";
-    private static final String BURIED = "BURIED";
-    private static final String RELEASED = "RELEASED";
-    private static final String NOT_FOUND = "NOT_FOUND";
+    public static final String DELETED = "DELETED";
+    public static final String TOUCHED = "TOUCHED";
+    public static final String BURIED = "BURIED";
+    public static final String RELEASED = "RELEASED";
+    public static final String NOT_FOUND = "NOT_FOUND";
 
     public RTalk(JedisPool jedis) {
         super(jedis);
+    }
+
+    public RTalk(JedisPool jedis, String tube) {
+        super(jedis);
+        this.tube = tube;
     }
 
     private String tube = "default";
@@ -123,6 +130,10 @@ public class RTalk extends RedisDao {
 
         public String status;
         public String id;
+
+        public boolean isInserted() {
+            return INSERTED.equals(status);
+        }
     }
 
     public static class Job {
@@ -167,8 +178,7 @@ public class RTalk extends RedisDao {
     }
 
     public PutResponse put(long pri, long delayMsec, long ttrMsec, String data) {
-        String id = UUID.randomUUID()
-                        .toString();
+        String id = randomUUID().toString();
         long _ttrMsec = Math.max(1000, ttrMsec);
         String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
         return withRedisTransaction(r -> {
@@ -284,6 +294,10 @@ public class RTalk extends RedisDao {
         public String status;
         public String id;
         public String data;
+
+        public boolean isReserved() {
+            return RESERVED.equals(status);
+        }
     }
 
     public ReserveResponse reserve(long blockTimeoutMsec) {
@@ -364,7 +378,7 @@ public class RTalk extends RedisDao {
         return withRedisTransaction(r -> {
             r.zrem(kReadyQueue(), id);
             r.del(kJob(id));
-            return "DELETED";
+            return DELETED;
         });
     }
 
