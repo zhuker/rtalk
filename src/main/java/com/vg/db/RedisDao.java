@@ -41,7 +41,7 @@ public abstract class RedisDao {
         return pool.getResource();
     }
 
-    protected void withRedisTransaction(Consumer<Transaction> r) {
+    protected void updateRedisTransaction(Consumer<Transaction> r) {
         withRedisTransaction(r, (Runnable) null);
     }
 
