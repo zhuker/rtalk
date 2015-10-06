@@ -529,7 +529,7 @@ public class RTalk extends RedisDao {
         if (ids.isEmpty())
             return 0;
 
-        withRedisTransaction(tx -> {
+        updateRedisTransaction(tx -> {
             for (String id : ids) {
                 tx.zrem(kBuried(), id);
                 tx.hset(kJob(id), fState, Job.READY);
@@ -560,7 +560,7 @@ public class RTalk extends RedisDao {
     public String kickJob(String id) {
         if (contains(id)) {
             long now = System.currentTimeMillis();
-            withRedisTransaction(tx -> {
+            updateRedisTransaction(tx -> {
                 tx.zrem(kBuried(), id);
                 tx.hset(kJob(id), fState, Job.READY);
                 tx.hincrBy(kJob(id), fKicks, 1);
