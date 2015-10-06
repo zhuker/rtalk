@@ -1,4 +1,4 @@
-package com.vg.rtalk;
+package rtalk;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.junit.Assert.assertEquals;

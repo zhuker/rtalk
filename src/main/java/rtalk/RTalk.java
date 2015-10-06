@@ -4,24 +4,12 @@ import static java.lang.Long.signum;
 import static java.util.UUID.randomUUID;
 import static rtalk.RTalk.PutResponse.INSERTED;
 
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Stream;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.vg.db.RedisDao;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.Transaction;
-import rtalk.RTalk.PutResponse;
 
 public class RTalk extends RedisDao {
 
