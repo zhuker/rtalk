@@ -1,12 +1,17 @@
 package rtalk;
 
 import static java.lang.Long.signum;
+import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
 import static rtalk.RTalk.PutResponse.INSERTED;
 
+import java.nio.ByteBuffer;
+import java.nio.LongBuffer;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -166,7 +171,35 @@ public class RTalk extends RedisDao {
     }
 
     public PutResponse put(long pri, long delayMsec, long ttrMsec, String data) {
-        String id = randomUUID().toString();
+        String id = newId();
+        return putWithId(id, pri, delayMsec, ttrMsec, data);
+    }
+
+    private String newId() {
+        UUID randomUUID = randomUUID();
+        return randomUUID.toString();
+    }
+
+    private String newIdBase64() {
+        UUID randomUUID = randomUUID();
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        buf.putLong(randomUUID.getMostSignificantBits());
+        buf.putLong(randomUUID.getLeastSignificantBits());
+
+        byte[] encode = getUrlEncoder().encode(buf.array());
+        String str = null;
+        if (encode[encode.length - 1] == '=' && encode[encode.length - 2] == '=') {
+            str = new String(encode, 0, encode.length - 2);
+        } else {
+            str = new String(encode);
+        }
+        return str;
+    }
+
+    public PutResponse putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
+        if (contains(id)) {
+            return new PutResponse(bury(id, pri), id);
+        }
         long _ttrMsec = Math.max(1000, ttrMsec);
         String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
         return withRedisTransaction(r -> {
