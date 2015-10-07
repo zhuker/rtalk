@@ -18,6 +18,7 @@ import redis.clients.jedis.JedisPool;
 
 public class RTalk extends RedisDao {
 
+    public static final String KICKED = "KICKED";
     public static final String DELETED = "DELETED";
     public static final String TOUCHED = "TOUCHED";
     public static final String BURIED = "BURIED";
@@ -601,6 +602,7 @@ public class RTalk extends RedisDao {
                 tx.hincrBy(kJob(id), fKicks, 1);
                 tx.zadd(kReadyQueue(), now, id);
             });
+            return KICKED;
         }
         return NOT_FOUND;
     }
