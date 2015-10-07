@@ -5,6 +5,8 @@ import static org.junit.Assert.*;
 import static redis.clients.jedis.Protocol.DEFAULT_PORT;
 import static redis.clients.jedis.Protocol.DEFAULT_TIMEOUT;
 import static rtalk.RTalk.BURIED;
+import static rtalk.RTalk.KICKED;
+import static rtalk.RTalk.NOT_FOUND;
 import static rtalk.RTalk.PutResponse.INSERTED;
 import static rtalk.RTalk.ReserveResponse.RESERVED;
 import static rtalk.RTalk.ReserveResponse.TIMED_OUT;
@@ -100,10 +102,18 @@ public class RTalkTest {
         PutResponse put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
         assertEquals(BURIED, rt.bury(put.id, 0));
-        assertEquals(RTalk.KICKED, rt.kickJob(put.id));
+        assertEquals(KICKED, rt.kickJob(put.id));
         ReserveResponse reserve = rt.reserve();
         assertEquals(RESERVED, reserve.status);
         assertEquals(put.id, reserve.id);
+    }
+
+    @Test
+    public void testKickJobNotFound() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        PutResponse put = rt.put(0, 0, 0, "a");
+        assertEquals(INSERTED, put.status);
+        assertEquals(NOT_FOUND, rt.kickJob(put.id));
     }
 
 }

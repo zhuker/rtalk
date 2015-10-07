@@ -594,7 +594,7 @@ public class RTalk extends RedisDao {
      * - "KICKED\r\n" when the operation succeeded.
      */
     public String kickJob(String id) {
-        if (contains(id)) {
+        if (isBurried(id)) {
             long now = System.currentTimeMillis();
             updateRedisTransaction(tx -> {
                 tx.zrem(kBuried(), id);
@@ -605,6 +605,10 @@ public class RTalk extends RedisDao {
             return KICKED;
         }
         return NOT_FOUND;
+    }
+
+    private boolean isBurried(String id) {
+        return null != withRedis(r -> r.zscore(kBuried(), id));
     }
 
     /**
