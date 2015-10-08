@@ -116,11 +116,11 @@ public class RTalk extends RedisDao {
             this.id = id;
         }
 
-        public static String INSERTED = "INSERTED";
-        public static String BURIED = "BURIED";
-        public static String EXPECTED_CRLF = "EXPECTED_CRLF";
-        public static String JOB_TOO_BIG = "JOB_TOO_BIG";
-        public static String DRAINING = "DRAINING";
+        public static final String INSERTED = "INSERTED";
+        public static final String BURIED = "BURIED";
+        public static final String EXPECTED_CRLF = "EXPECTED_CRLF";
+        public static final String JOB_TOO_BIG = "JOB_TOO_BIG";
+        public static final String DRAINING = "DRAINING";
 
         public String status;
         public String id;
@@ -131,10 +131,10 @@ public class RTalk extends RedisDao {
     }
 
     public static class Job {
-        public static String DELAYED = "DELAYED";
-        public static String READY = "READY";
-        public static String RESERVED = "RESERVED";
-        public static String BURIED = "BURIED";
+        public static final String DELAYED = "DELAYED";
+        public static final String READY = "READY";
+        public static final String RESERVED = "RESERVED";
+        public static final String BURIED = "BURIED";
 
         public String id;
         public long ttrMsec;
@@ -309,9 +309,9 @@ public class RTalk extends RedisDao {
             this.data = data;
         }
 
-        public static String RESERVED = "RESERVED";
-        public static String TIMED_OUT = "TIMED_OUT";
-        public static String DEADLINE_SOON = "DEADLINE_SOON";
+        public static final String RESERVED = "RESERVED";
+        public static final String TIMED_OUT = "TIMED_OUT";
+        public static final String DEADLINE_SOON = "DEADLINE_SOON";
 
         public String status;
         public String id;
