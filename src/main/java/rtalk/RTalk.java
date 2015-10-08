@@ -328,7 +328,7 @@ public class RTalk extends RedisDao {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
             Optional<Job> firstJob_ = ids.stream()
                                          .map(id -> _getJob(r, id))
-                                         .filter(j -> Job.DELAYED.equals(j.state) || Job.READY.equals(j.state))
+                                         .filter(j -> !Job.BURIED.equals(j.state))
                                          .sorted((j1, j2) -> signum(j1.pri - j2.pri))
                                          .findFirst();
             return firstJob_;
@@ -338,7 +338,7 @@ public class RTalk extends RedisDao {
             Job j = firstJob.get();
             return withRedisTransaction(r -> {
                 r.hset(kJob(j.id), fState, Job.RESERVED);
-                r.zadd(kReadyQueue(), System.currentTimeMillis() + j.ttrMsec, j.id);
+                r.zadd(kReadyQueue(), now + j.ttrMsec, j.id);
                 r.hincrBy(kJob(j.id), fReserves, 1);
                 return new ReserveResponse(ReserveResponse.RESERVED, j.id, j.data);
             });
@@ -391,9 +391,7 @@ public class RTalk extends RedisDao {
      * before the client sent the delete command.
      */
     public String delete(String id) {
-        Double score = withRedis(r -> {
-            return r.zscore(kReadyQueue(), id);
-        });
+        Double score = withRedis(r -> r.zscore(kReadyQueue(), id));
         if (score == null) {
             return NOT_FOUND;
         }

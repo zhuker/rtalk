@@ -13,6 +13,7 @@ import static rtalk.RTalk.ReserveResponse.TIMED_OUT;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import redis.clients.jedis.Jedis;
@@ -45,6 +46,30 @@ public class RTalkTest {
         try (Jedis j = jedisPool.getResource()) {
             j.flushDB();
         }
+    }
+
+    @Test
+//    @Ignore
+    public void testPut() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        rt.put(1, 0, 0, "{videoUrl: 'http://localhost/Dropbox/MyVideos/GOPR3207.MP4_', videoId: '4243'}");
+        rt.put(0, 0, 0, "{videoUrl: 'http://localhost/Dropbox/MyVideos/GOPR3207.MP4', videoId: '4242'}");
+    }
+
+    @Test
+    public void testPutTimeoutTTR() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        PutResponse put1 = rt.put(0, 0, 1000, "a");
+        assertEquals(INSERTED, put1.status);
+        ReserveResponse reserve = rt.reserve();
+        assertEquals(RESERVED, reserve.status);
+        assertEquals(put1.id, reserve.id);
+        Thread.sleep(1500);
+        
+        ReserveResponse reserveAfterWorkerTimeout = rt.reserve();
+        assertEquals(RESERVED, reserveAfterWorkerTimeout.status);
+        assertEquals(put1.id, reserveAfterWorkerTimeout.id);
+
     }
 
     @Test
