@@ -49,14 +49,6 @@ public class RTalkTest {
     }
 
     @Test
-//    @Ignore
-    public void testPut() throws Exception {
-        RTalk rt = new RTalk(jedisPool);
-        rt.put(1, 0, 0, "{videoUrl: 'http://localhost/Dropbox/MyVideos/GOPR3207.MP4_', videoId: '4243'}");
-        rt.put(0, 0, 0, "{videoUrl: 'http://localhost/Dropbox/MyVideos/GOPR3207.MP4', videoId: '4242'}");
-    }
-
-    @Test
     public void testPutTimeoutTTR() throws Exception {
         RTalk rt = new RTalk(jedisPool);
         PutResponse put1 = rt.put(0, 0, 1000, "a");
