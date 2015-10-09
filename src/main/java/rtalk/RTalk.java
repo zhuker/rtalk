@@ -35,6 +35,10 @@ public class RTalk extends RedisDao {
     }
 
     private String tube = "default";
+    
+    public String getTube() {
+        return tube;
+    }
 
     /**
      * use <tube>\r\n
