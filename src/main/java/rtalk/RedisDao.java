@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public abstract class RedisDao {
-    private final JedisPool pool;
+    protected final JedisPool pool;
 
     public RedisDao(JedisPool pool) {
         this.pool = pool;

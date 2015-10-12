@@ -39,7 +39,7 @@ public class RTalk extends RedisDao {
         this.tube = tube;
     }
 
-    private final String tube;
+    protected final String tube;
 
     public String getTube() {
         return tube;
