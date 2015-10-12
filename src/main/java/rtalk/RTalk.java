@@ -3,7 +3,6 @@ package rtalk;
 import static java.lang.Long.signum;
 import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
-import static rtalk.RTalk.PutResponse.INSERTED;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -13,6 +12,7 @@ import java.util.UUID;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Transaction;
 
 public class RTalk extends RedisDao {
 
@@ -22,6 +22,13 @@ public class RTalk extends RedisDao {
     public static final String BURIED = "BURIED";
     public static final String RELEASED = "RELEASED";
     public static final String NOT_FOUND = "NOT_FOUND";
+    public static final String RESERVED = "RESERVED";
+    public static final String TIMED_OUT = "TIMED_OUT";
+    public static final String DEADLINE_SOON = "DEADLINE_SOON";
+    public static final String INSERTED = "INSERTED";
+    public static final String EXPECTED_CRLF = "EXPECTED_CRLF";
+    public static final String JOB_TOO_BIG = "JOB_TOO_BIG";
+    public static final String DRAINING = "DRAINING";
 
     public RTalk(JedisPool jedis) {
         this(jedis, "default");
@@ -111,26 +118,6 @@ public class RTalk extends RedisDao {
      * into the tube specified by this command. If no use command has been
      * issued, jobs will be put into the tube named "default".
      */
-    public static class PutResponse {
-        public PutResponse(String status, String id) {
-            this.status = status;
-            this.id = id;
-        }
-
-        public static final String INSERTED = "INSERTED";
-        public static final String BURIED = "BURIED";
-        public static final String EXPECTED_CRLF = "EXPECTED_CRLF";
-        public static final String JOB_TOO_BIG = "JOB_TOO_BIG";
-        public static final String DRAINING = "DRAINING";
-
-        public String status;
-        public String id;
-
-        public boolean isInserted() {
-            return INSERTED.equals(status);
-        }
-    }
-
     public static class Job {
         public static final String DELAYED = "DELAYED";
         public static final String READY = "READY";
@@ -172,7 +159,7 @@ public class RTalk extends RedisDao {
 
     }
 
-    public PutResponse put(long pri, long delayMsec, long ttrMsec, String data) {
+    public Response put(long pri, long delayMsec, long ttrMsec, String data) {
         String id = newId();
         return putWithId(id, pri, delayMsec, ttrMsec, data);
     }
@@ -198,9 +185,9 @@ public class RTalk extends RedisDao {
         return str;
     }
 
-    public PutResponse putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
+    public Response putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
         if (contains(id)) {
-            return new PutResponse(bury(id, pri), id);
+            return bury(id, pri);
         }
         long _ttrMsec = Math.max(1000, ttrMsec);
         String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
@@ -214,8 +201,12 @@ public class RTalk extends RedisDao {
             r.hset(kJob(id), fState, status);
             r.hset(kJob(id), fCtime, Long.toString(now));
             r.hset(kJob(id), fTube, tube);
-            return new PutResponse(INSERTED, id);
+            return on(new Response(INSERTED, id));
         });
+    }
+
+    protected Response on(Response response) {
+        return response;
     }
 
     private static final String fTube = "tube";
@@ -299,20 +290,21 @@ public class RTalk extends RedisDao {
      * the previous line. This is a verbatim copy of the bytes that were
      * originally sent to the server in the put command for this job.
      */
-    public ReserveResponse reserve() {
+    public Response reserve() {
         return reserve(0);
     }
 
-    public static class ReserveResponse {
-        public ReserveResponse(String status, String id, String data) {
+    public static class Response {
+        public Response(String status, String id) {
+            this.status = status;
+            this.id = id;
+        }
+
+        public Response(String status, String id, String data) {
             this.status = status;
             this.id = id;
             this.data = data;
         }
-
-        public static final String RESERVED = "RESERVED";
-        public static final String TIMED_OUT = "TIMED_OUT";
-        public static final String DEADLINE_SOON = "DEADLINE_SOON";
 
         public String status;
         public String id;
@@ -321,9 +313,44 @@ public class RTalk extends RedisDao {
         public boolean isReserved() {
             return RESERVED.equals(status);
         }
+
+        public boolean isInserted() {
+            return INSERTED.equals(status);
+        }
+
+        public boolean isDeleted() {
+            return DELETED.equals(status);
+        }
+
+        public boolean isBuried() {
+            return BURIED.equals(status);
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder builder = new StringBuilder();
+            builder.append("{");
+            if (status != null) {
+                builder.append("\"status\": '");
+                builder.append(status);
+                builder.append("', ");
+            }
+            if (id != null) {
+                builder.append("\"id\": '");
+                builder.append(id);
+                builder.append("', ");
+            }
+            if (data != null) {
+                builder.append("\"data\": '");
+                builder.append(data);
+                builder.append("'");
+            }
+            builder.append("}");
+            return builder.toString();
+        }
     }
 
-    public ReserveResponse reserve(long blockTimeoutMsec) {
+    public Response reserve(long blockTimeoutMsec) {
         long now = System.currentTimeMillis();
         Optional<Job> firstJob = withRedis(r -> {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
@@ -341,10 +368,10 @@ public class RTalk extends RedisDao {
                 r.hset(kJob(j.id), fState, Job.RESERVED);
                 r.zadd(kReadyQueue(), now + j.ttrMsec, j.id);
                 r.hincrBy(kJob(j.id), fReserves, 1);
-                return new ReserveResponse(ReserveResponse.RESERVED, j.id, j.data);
+                return new Response(RESERVED, j.id, j.data);
             });
         }
-        return new ReserveResponse(ReserveResponse.TIMED_OUT, null, null);
+        return new Response(TIMED_OUT, null, null);
     }
 
     private Job _getJob(Jedis r, String id) {
@@ -391,15 +418,15 @@ public class RTalk extends RedisDao {
      * the client, ready, or buried. This could happen if the job timed out
      * before the client sent the delete command.
      */
-    public String delete(String id) {
+    public Response delete(String id) {
         Double score = withRedis(r -> r.zscore(kReadyQueue(), id));
         if (score == null) {
-            return NOT_FOUND;
+            return new Response(NOT_FOUND, id);
         }
         return withRedisTransaction(r -> {
             r.zrem(kReadyQueue(), id);
             r.del(kJob(id));
-            return DELETED;
+            return new Response(DELETED, id);
         });
     }
 
@@ -428,17 +455,17 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public String release(String id, long pri, long delayMsec) {
+    public Response release(String id, long pri, long delayMsec) {
         if (contains(id)) {
             return withRedisTransaction(tx -> {
                 tx.zadd(kReadyQueue(), System.currentTimeMillis() + delayMsec, id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, delayMsec > 0 ? Job.DELAYED : Job.READY);
                 tx.hincrBy(kJob(id), fReleases, 1);
-                return RELEASED;
+                return new Response(RELEASED, id);
             });
         }
-        return NOT_FOUND;
+        return new Response(NOT_FOUND, id);
     }
 
     public boolean contains(String id) {
@@ -465,7 +492,7 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public String bury(String id, long pri) {
+    public Response bury(String id, long pri) {
         if (contains(id)) {
             return withRedisTransaction(tx -> {
                 tx.zrem(kReadyQueue(), id);
@@ -473,10 +500,10 @@ public class RTalk extends RedisDao {
                 tx.hset(kJob(id), fState, Job.BURIED);
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried(), System.currentTimeMillis(), id);
-                return BURIED;
+                return new Response(BURIED, id);
             });
         }
-        return NOT_FOUND;
+        return new Response(NOT_FOUND, id);
     }
 
     private String kBuried() {
@@ -505,15 +532,15 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public String touch(String id) {
+    public Response touch(String id) {
         Job j = withRedis(r -> _getJob(r, id));
         if (j != null) {
             withRedis(r -> {
                 r.zincrby(kReadyQueue(), j.ttrMsec, id);
-                return TOUCHED;
+                return new Response(TOUCHED, id);
             });
         }
-        return NOT_FOUND;
+        return new Response(NOT_FOUND, id);
     }
 
     public static long toLong(Object object) {
@@ -566,10 +593,7 @@ public class RTalk extends RedisDao {
 
         updateRedisTransaction(tx -> {
             for (String id : ids) {
-                tx.zrem(kBuried(), id);
-                tx.hset(kJob(id), fState, Job.READY);
-                tx.hincrBy(kJob(id), fKicks, 1);
-                tx.zadd(kReadyQueue(), now, id);
+                _kickJob(id, now, tx);
             }
         });
         return ids.size();
@@ -592,18 +616,21 @@ public class RTalk extends RedisDao {
      * 
      * - "KICKED\r\n" when the operation succeeded.
      */
-    public String kickJob(String id) {
+    public Response kickJob(String id) {
         if (isBurried(id)) {
             long now = System.currentTimeMillis();
-            updateRedisTransaction(tx -> {
-                tx.zrem(kBuried(), id);
-                tx.hset(kJob(id), fState, Job.READY);
-                tx.hincrBy(kJob(id), fKicks, 1);
-                tx.zadd(kReadyQueue(), now, id);
-            });
-            return KICKED;
+            updateRedisTransaction(tx -> _kickJob(id, now, tx));
+            return new Response(KICKED, id);
         }
-        return NOT_FOUND;
+        return new Response(NOT_FOUND, id);
+    }
+
+    private void _kickJob(String id, long now, Transaction tx) {
+        tx.zrem(kBuried(), id);
+        tx.hset(kJob(id), fState, Job.READY);
+        tx.hincrBy(kJob(id), fKicks, 1);
+        tx.zadd(kReadyQueue(), now, id);
+        on(new Response(KICKED, id));
     }
 
     private boolean isBurried(String id) {

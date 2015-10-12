@@ -1,26 +1,24 @@
 package rtalk;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static redis.clients.jedis.Protocol.DEFAULT_PORT;
 import static redis.clients.jedis.Protocol.DEFAULT_TIMEOUT;
 import static rtalk.RTalk.BURIED;
+import static rtalk.RTalk.INSERTED;
 import static rtalk.RTalk.KICKED;
 import static rtalk.RTalk.NOT_FOUND;
-import static rtalk.RTalk.PutResponse.INSERTED;
-import static rtalk.RTalk.ReserveResponse.RESERVED;
-import static rtalk.RTalk.ReserveResponse.TIMED_OUT;
+import static rtalk.RTalk.RESERVED;
+import static rtalk.RTalk.TIMED_OUT;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import rtalk.RTalk;
-import rtalk.RTalk.PutResponse;
-import rtalk.RTalk.ReserveResponse;
+import rtalk.RTalk.Response;
 
 public class RTalkTest {
 
@@ -51,14 +49,14 @@ public class RTalkTest {
     @Test
     public void testPutTimeoutTTR() throws Exception {
         RTalk rt = new RTalk(jedisPool);
-        PutResponse put1 = rt.put(0, 0, 1000, "a");
+        Response put1 = rt.put(0, 0, 1000, "a");
         assertEquals(INSERTED, put1.status);
-        ReserveResponse reserve = rt.reserve();
+        Response reserve = rt.reserve();
         assertEquals(RESERVED, reserve.status);
         assertEquals(put1.id, reserve.id);
         Thread.sleep(1500);
         
-        ReserveResponse reserveAfterWorkerTimeout = rt.reserve();
+        Response reserveAfterWorkerTimeout = rt.reserve();
         assertEquals(RESERVED, reserveAfterWorkerTimeout.status);
         assertEquals(put1.id, reserveAfterWorkerTimeout.id);
 
@@ -69,15 +67,15 @@ public class RTalkTest {
         RTalk rt = new RTalk(jedisPool);
         String expectedData = "{hello: 'world'}";
 
-        PutResponse put1 = rt.put(1, 0, 0, "{}");
+        Response put1 = rt.put(1, 0, 0, "{}");
         assertEquals(INSERTED, put1.status);
         assertTrue(isNotBlank(put1.id));
 
-        PutResponse put2 = rt.put(0, 0, 0, expectedData);
+        Response put2 = rt.put(0, 0, 0, expectedData);
         assertEquals(INSERTED, put2.status);
         assertTrue(isNotBlank(put2.id));
 
-        ReserveResponse reserve = rt.reserve();
+        Response reserve = rt.reserve();
 
         assertEquals(RESERVED, reserve.status);
         assertEquals(put2.id, reserve.id);
@@ -92,10 +90,10 @@ public class RTalkTest {
     @Test
     public void testPutPriorityReserve() throws Exception {
         RTalk rt = new RTalk(jedisPool);
-        PutResponse put1 = rt.put(0, 0, 0, "a");
+        Response put1 = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put1.status);
 
-        PutResponse put2 = rt.put(0, 0, 0, "b");
+        Response put2 = rt.put(0, 0, 0, "b");
         assertEquals(INSERTED, put2.status);
 
         assertEquals(put1.id, rt.reserve().id);
@@ -108,7 +106,7 @@ public class RTalkTest {
     public void testPutDelayReserve() throws Exception {
         RTalk rt = new RTalk(jedisPool);
         String expectedData = "{hello: 'world'}";
-        PutResponse put = rt.put(0, 1000, 0, expectedData);
+        Response put = rt.put(0, 1000, 0, expectedData);
         assertEquals(INSERTED, put.status);
         assertTrue(isNotBlank(put.id));
     }
@@ -116,11 +114,11 @@ public class RTalkTest {
     @Test
     public void testPutBuryKickJob() throws Exception {
         RTalk rt = new RTalk(jedisPool);
-        PutResponse put = rt.put(0, 0, 0, "a");
+        Response put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
-        assertEquals(BURIED, rt.bury(put.id, 0));
-        assertEquals(KICKED, rt.kickJob(put.id));
-        ReserveResponse reserve = rt.reserve();
+        assertEquals(BURIED, rt.bury(put.id, 0).status);
+        assertEquals(KICKED, rt.kickJob(put.id).status);
+        Response reserve = rt.reserve();
         assertEquals(RESERVED, reserve.status);
         assertEquals(put.id, reserve.id);
     }
@@ -128,9 +126,9 @@ public class RTalkTest {
     @Test
     public void testKickJobNotFound() throws Exception {
         RTalk rt = new RTalk(jedisPool);
-        PutResponse put = rt.put(0, 0, 0, "a");
+        Response put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
-        assertEquals(NOT_FOUND, rt.kickJob(put.id));
+        assertEquals(NOT_FOUND, rt.kickJob(put.id).status);
     }
 
 }
