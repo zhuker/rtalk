@@ -6,8 +6,6 @@ import static java.util.UUID.randomUUID;
 import static rtalk.RTalk.PutResponse.INSERTED;
 
 import java.nio.ByteBuffer;
-import java.nio.LongBuffer;
-import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -26,7 +24,7 @@ public class RTalk extends RedisDao {
     public static final String NOT_FOUND = "NOT_FOUND";
 
     public RTalk(JedisPool jedis) {
-        super(jedis);
+        this(jedis, "default");
     }
 
     public RTalk(JedisPool jedis, String tube) {
@@ -34,8 +32,8 @@ public class RTalk extends RedisDao {
         this.tube = tube;
     }
 
-    private String tube = "default";
-    
+    private final String tube;
+
     public String getTube() {
         return tube;
     }
@@ -52,9 +50,8 @@ public class RTalk extends RedisDao {
      * 
      * - <tube> is the name of the tube now being used.
      */
-    public String use(String tube) {
-        this.tube = tube;
-        return tube;
+    public static RTalk use(JedisPool jedis, String tube) {
+        return new RTalk(jedis, tube);
     }
 
     /**
@@ -234,7 +231,7 @@ public class RTalk extends RedisDao {
     private static final String fKicks = "kicks";
 
     private String kJob(String id) {
-        return "job_" + id;
+        return tube + "_" + id;
     }
 
     private String kReadyQueue() {
