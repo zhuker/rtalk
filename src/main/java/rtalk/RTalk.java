@@ -356,7 +356,7 @@ public class RTalk extends RedisDao {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
             Optional<Job> firstJob_ = ids.stream()
                                          .map(id -> _getJob(r, id))
-                                         .filter(j -> !Job.BURIED.equals(j.state))
+                                         .filter(j -> j!= null && !Job.BURIED.equals(j.state))
                                          .sorted((j1, j2) -> signum(j1.pri - j2.pri))
                                          .findFirst();
             return firstJob_;
