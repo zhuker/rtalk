@@ -164,7 +164,7 @@ public class RTalk extends RedisDao {
         return putWithId(id, pri, delayMsec, ttrMsec, data);
     }
 
-    private String newId() {
+    protected String newId() {
         UUID randomUUID = randomUUID();
         return randomUUID.toString();
     }
