@@ -294,16 +294,20 @@ public class RTalk extends RedisDao {
         return reserve(0);
     }
 
-    public static class Response {
+    public class Response {
+        public final String tube;
+
         public Response(String status, String id) {
             this.status = status;
             this.id = id;
+            this.tube = getTube();
         }
 
         public Response(String status, String id, String data) {
             this.status = status;
             this.id = id;
             this.data = data;
+            this.tube = getTube();
         }
 
         public String status;
@@ -368,7 +372,7 @@ public class RTalk extends RedisDao {
                 r.hset(kJob(j.id), fState, Job.RESERVED);
                 r.zadd(kReadyQueue(), now + j.ttrMsec, j.id);
                 r.hincrBy(kJob(j.id), fReserves, 1);
-                return new Response(RESERVED, j.id, j.data);
+                return on(new Response(RESERVED, j.id, j.data));
             });
         }
         return new Response(TIMED_OUT, null, null);
