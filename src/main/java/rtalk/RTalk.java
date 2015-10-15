@@ -201,7 +201,7 @@ public class RTalk extends RedisDao {
             r.hset(kJob(id), fState, status);
             r.hset(kJob(id), fCtime, Long.toString(now));
             r.hset(kJob(id), fTube, tube);
-            return on(new Response(INSERTED, id));
+            return on(new Response(INSERTED, id, data));
         });
     }
 
