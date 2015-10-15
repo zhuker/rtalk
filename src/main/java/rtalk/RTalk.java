@@ -334,8 +334,14 @@ public class RTalk extends RedisDao {
         public String toString() {
             StringBuilder builder = new StringBuilder();
             builder.append("{");
+            if (tube != null) {
+                builder.append("\"tube\": '");
+                builder.append(tube);
+                builder.append("'");
+            }
+
             if (status != null) {
-                builder.append("\"status\": '");
+                builder.append(", \"status\": '");
                 builder.append(status);
                 builder.append("'");
             }
@@ -360,7 +366,7 @@ public class RTalk extends RedisDao {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
             Optional<Job> firstJob_ = ids.stream()
                                          .map(id -> _getJob(r, id))
-                                         .filter(j -> j!= null && !Job.BURIED.equals(j.state))
+                                         .filter(j -> j != null && !Job.BURIED.equals(j.state))
                                          .sorted((j1, j2) -> signum(j1.pri - j2.pri))
                                          .findFirst();
             return firstJob_;
