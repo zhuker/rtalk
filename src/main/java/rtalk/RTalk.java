@@ -185,7 +185,7 @@ public class RTalk extends RedisDao {
         return str;
     }
 
-    public Response putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
+    public synchronized Response putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
         if (contains(id)) {
             return bury(id, pri);
         }
@@ -360,7 +360,7 @@ public class RTalk extends RedisDao {
         }
     }
 
-    public Response reserve(long blockTimeoutMsec) {
+    public synchronized Response reserve(long blockTimeoutMsec) {
         long now = System.currentTimeMillis();
         Optional<Job> firstJob = withRedis(r -> {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
@@ -428,7 +428,7 @@ public class RTalk extends RedisDao {
      * the client, ready, or buried. This could happen if the job timed out
      * before the client sent the delete command.
      */
-    public Response delete(String id) {
+    public synchronized Response delete(String id) {
         Double score = withRedis(r -> r.zscore(kReadyQueue(), id));
         if (score == null) {
             return new Response(NOT_FOUND, id);
@@ -465,7 +465,7 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public Response release(String id, long pri, long delayMsec) {
+    public synchronized Response release(String id, long pri, long delayMsec) {
         if (contains(id)) {
             return withRedisTransaction(tx -> {
                 tx.zadd(kReadyQueue(), System.currentTimeMillis() + delayMsec, id);
@@ -478,7 +478,7 @@ public class RTalk extends RedisDao {
         return new Response(NOT_FOUND, id);
     }
 
-    public boolean contains(String id) {
+    public synchronized boolean contains(String id) {
         return withRedis(r -> r.exists(kJob(id)));
     }
 
@@ -502,7 +502,7 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public Response bury(String id, long pri) {
+    public synchronized Response bury(String id, long pri) {
         if (contains(id)) {
             return withRedisTransaction(tx -> {
                 tx.zrem(kReadyQueue(), id);
@@ -542,7 +542,7 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public Response touch(String id) {
+    public synchronized Response touch(String id) {
         Job j = withRedis(r -> _getJob(r, id));
         if (j != null) {
             withRedis(r -> {
@@ -589,7 +589,7 @@ public class RTalk extends RedisDao {
      * 
      * - <count> is an integer indicating the number of jobs actually kicked.
      */
-    public int kick(int bound) {
+    public synchronized int kick(int bound) {
         long now = System.currentTimeMillis();
         Set<String> ids = withRedis(r -> {
             if (r.zcard(kBuried()) > 0) {
@@ -626,7 +626,7 @@ public class RTalk extends RedisDao {
      * 
      * - "KICKED\r\n" when the operation succeeded.
      */
-    public Response kickJob(String id) {
+    public synchronized Response kickJob(String id) {
         if (isBurried(id)) {
             long now = System.currentTimeMillis();
             updateRedisTransaction(tx -> _kickJob(id, now, tx));
@@ -701,7 +701,7 @@ public class RTalk extends RedisDao {
      * - "kicks" is the number of times this job has been kicked.
      */
 
-    public Job statsJob(String id) {
+    public synchronized Job statsJob(String id) {
         return withRedis(r -> _getJob(r, id));
     }
 
