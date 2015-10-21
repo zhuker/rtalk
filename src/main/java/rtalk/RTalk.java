@@ -436,7 +436,7 @@ public class RTalk extends RedisDao {
         return withRedisTransaction(r -> {
             r.zrem(kReadyQueue(), id);
             r.del(kJob(id));
-            return new Response(DELETED, id);
+            return on(new Response(DELETED, id));
         });
     }
 
