@@ -472,7 +472,7 @@ public class RTalk extends RedisDao {
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, delayMsec > 0 ? Job.DELAYED : Job.READY);
                 tx.hincrBy(kJob(id), fReleases, 1);
-                return new Response(RELEASED, id);
+                return on(new Response(RELEASED, id));
             });
         }
         return new Response(NOT_FOUND, id);
@@ -510,7 +510,7 @@ public class RTalk extends RedisDao {
                 tx.hset(kJob(id), fState, Job.BURIED);
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried(), System.currentTimeMillis(), id);
-                return new Response(BURIED, id);
+                return on(new Response(BURIED, id));
             });
         }
         return new Response(NOT_FOUND, id);
@@ -547,7 +547,7 @@ public class RTalk extends RedisDao {
         if (j != null) {
             withRedis(r -> {
                 r.zincrby(kReadyQueue(), j.ttrMsec, id);
-                return new Response(TOUCHED, id);
+                return on(new Response(TOUCHED, id));
             });
         }
         return new Response(NOT_FOUND, id);
@@ -630,7 +630,7 @@ public class RTalk extends RedisDao {
         if (isBurried(id)) {
             long now = System.currentTimeMillis();
             updateRedisTransaction(tx -> _kickJob(id, now, tx));
-            return new Response(KICKED, id);
+            return on(new Response(KICKED, id));
         }
         return new Response(NOT_FOUND, id);
     }
