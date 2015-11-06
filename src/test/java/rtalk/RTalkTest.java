@@ -25,7 +25,7 @@ public class RTalkTest {
     private JedisPool jedisPool;
 
     public JedisPool getJedisPool() {
-        return new JedisPool(poolConfig(), "localhost", DEFAULT_PORT, DEFAULT_TIMEOUT, null, 0);
+        return new JedisPool(poolConfig(), "localhost", DEFAULT_PORT, DEFAULT_TIMEOUT, null, 42);
     }
 
     public static GenericObjectPoolConfig poolConfig() {
@@ -101,6 +101,22 @@ public class RTalkTest {
 
         assertEquals(TIMED_OUT, rt.reserve().status);
     }
+    
+    @Test
+    public void testPutPriorityReserve2() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        Response put1 = rt.put(1, 0, 0, "a");
+        assertEquals(INSERTED, put1.status);
+
+        Response put2 = rt.put(0, 0, 0, "b");
+        assertEquals(INSERTED, put2.status);
+
+        assertEquals(put2.id, rt.reserve().id);
+        assertEquals(put1.id, rt.reserve().id);
+
+        assertEquals(TIMED_OUT, rt.reserve().status);
+    }
+
 
     @Test
     public void testPutDelayReserve() throws Exception {

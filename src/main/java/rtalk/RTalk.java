@@ -5,6 +5,7 @@ import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -364,11 +365,12 @@ public class RTalk extends RedisDao {
         long now = System.currentTimeMillis();
         Optional<Job> firstJob = withRedis(r -> {
             Set<String> ids = r.zrangeByScore(kReadyQueue(), 0, now);
-            Optional<Job> firstJob_ = ids.stream()
-                                         .map(id -> _getJob(r, id))
-                                         .filter(j -> j != null && !Job.BURIED.equals(j.state))
-                                         .sorted((j1, j2) -> signum(j1.pri - j2.pri))
-                                         .findFirst();
+            Optional<Job> firstJob_ = ids
+                    .stream()
+                    .map(id -> _getJob(r, id))
+                    .filter(j -> j != null && !Job.BURIED.equals(j.state))
+                    .sorted((j1, j2) -> signum(j1.pri - j2.pri))
+                    .findFirst();
             return firstJob_;
         });
 
@@ -433,10 +435,11 @@ public class RTalk extends RedisDao {
         if (score == null) {
             return new Response(NOT_FOUND, id);
         }
+        String data = withRedis(r -> r.hget(kJob(id), fData));
         return withRedisTransaction(r -> {
             r.zrem(kReadyQueue(), id);
             r.del(kJob(id));
-            return on(new Response(DELETED, id));
+            return on(new Response(DELETED, id, data));
         });
     }
 
@@ -504,13 +507,14 @@ public class RTalk extends RedisDao {
      */
     public synchronized Response bury(String id, long pri) {
         if (contains(id)) {
+            String data = withRedis(r -> r.hget(kJob(id), fData));
             return withRedisTransaction(tx -> {
                 tx.zrem(kReadyQueue(), id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, Job.BURIED);
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried(), System.currentTimeMillis(), id);
-                return on(new Response(BURIED, id));
+                return on(new Response(BURIED, id, data));
             });
         }
         return new Response(NOT_FOUND, id);
@@ -547,7 +551,7 @@ public class RTalk extends RedisDao {
         if (j != null) {
             withRedis(r -> {
                 r.zincrby(kReadyQueue(), j.ttrMsec, id);
-                return on(new Response(TOUCHED, id));
+                return on(new Response(TOUCHED, id, j.data));
             });
         }
         return new Response(NOT_FOUND, id);
@@ -703,6 +707,10 @@ public class RTalk extends RedisDao {
 
     public synchronized Job statsJob(String id) {
         return withRedis(r -> _getJob(r, id));
+    }
+
+    public Set<String> getIds() {
+        return withRedis(r -> r.zrange(kReadyQueue(), 0, -1));
     }
 
 }
