@@ -25,7 +25,7 @@ public class RTalkTest {
     private JedisPool jedisPool;
 
     public JedisPool getJedisPool() {
-        return new JedisPool(poolConfig(), "localhost", DEFAULT_PORT, DEFAULT_TIMEOUT, null, 42);
+        return new JedisPool(poolConfig(), "localhost", DEFAULT_PORT, DEFAULT_TIMEOUT, null, 9);
     }
 
     public static GenericObjectPoolConfig poolConfig() {
