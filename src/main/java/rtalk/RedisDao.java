@@ -1,4 +1,4 @@
-package com.vg.db;
+package rtalk;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public abstract class RedisDao {
-    private final JedisPool pool;
+    protected final JedisPool pool;
 
     public RedisDao(JedisPool pool) {
         this.pool = pool;
@@ -41,10 +41,10 @@ public abstract class RedisDao {
         return pool.getResource();
     }
 
-    protected void withRedisTransaction(Consumer<Transaction> r) {
+    protected void updateRedisTransaction(Consumer<Transaction> r) {
         withRedisTransaction(r, (Runnable) null);
     }
-
+    
     protected <T> T withRedisTransaction(Function<Transaction, T> r) {
         Jedis redis = getRedis();
         Transaction transaction = null;
