@@ -21,17 +21,20 @@
 			</snapshots>
 		</repository>
 		<repository>
-			<id>public.videogorillas.com</id>
-			<name>Publuc Repository for Maven</name>
-			<url>http://videogorillas.com/m2/</url>
-		</repository>
-
-		<repository>
-			<id>private.videogorillas.com</id>
-			<name>Private Repository for Maven</name>
-			<url>scpexe://videogorillas.com/var/www/users/videogorillas/m2/private</url>
+			<id>DropboxM2</id>
+			<url>file://${user.home}/Dropbox/m2/repository</url>
 		</repository>
 	</repositories>
+	<distributionManagement>
+		<repository>
+			<uniqueVersion>false</uniqueVersion>
+			<id>DropboxM2</id>
+			<name>Corporate Repository</name>
+			<url>file://${user.home}/Dropbox/m2/repository</url>
+			<layout>default</layout>
+		</repository>
+	</distributionManagement>
+
 	<build>
 		<plugins>
 			<plugin>
