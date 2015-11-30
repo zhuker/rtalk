@@ -5,7 +5,6 @@ import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
 
 import java.nio.ByteBuffer;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -329,6 +328,10 @@ public class RTalk extends RedisDao {
 
         public boolean isBuried() {
             return BURIED.equals(status);
+        }
+
+        public boolean isKicked() {
+            return KICKED.equals(status);
         }
 
         @Override
