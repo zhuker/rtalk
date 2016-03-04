@@ -552,7 +552,7 @@ public class RTalk extends RedisDao {
     public synchronized Response touch(String id) {
         Job j = withRedis(r -> _getJob(r, id));
         if (j != null) {
-            withRedis(r -> {
+            return withRedis(r -> {
                 r.zincrby(kReadyQueue(), j.ttrMsec, id);
                 return on(new Response(TOUCHED, id, j.data));
             });

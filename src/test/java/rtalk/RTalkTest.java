@@ -1,8 +1,7 @@
 package rtalk;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import static redis.clients.jedis.Protocol.DEFAULT_PORT;
 import static redis.clients.jedis.Protocol.DEFAULT_TIMEOUT;
 import static rtalk.RTalk.BURIED;
@@ -18,6 +17,7 @@ import org.junit.Test;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import rtalk.RTalk.Job;
 import rtalk.RTalk.Response;
 
 public class RTalkTest {
@@ -55,7 +55,7 @@ public class RTalkTest {
         assertEquals(RESERVED, reserve.status);
         assertEquals(put1.id, reserve.id);
         Thread.sleep(1500);
-        
+
         Response reserveAfterWorkerTimeout = rt.reserve();
         assertEquals(RESERVED, reserveAfterWorkerTimeout.status);
         assertEquals(put1.id, reserveAfterWorkerTimeout.id);
@@ -101,7 +101,7 @@ public class RTalkTest {
 
         assertEquals(TIMED_OUT, rt.reserve().status);
     }
-    
+
     @Test
     public void testPutPriorityReserve2() throws Exception {
         RTalk rt = new RTalk(jedisPool);
@@ -116,7 +116,6 @@ public class RTalkTest {
 
         assertEquals(TIMED_OUT, rt.reserve().status);
     }
-
 
     @Test
     public void testPutDelayReserve() throws Exception {
@@ -145,6 +144,20 @@ public class RTalkTest {
         Response put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
         assertEquals(NOT_FOUND, rt.kickJob(put.id).status);
+    }
+
+    @Test
+    public void testTouch() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        Response put = rt.put(0, 0, 42000, "a");
+        Job statsJob = rt.statsJob(put.id);
+        long readyTime1 = statsJob.readyTime;
+        Response touch = rt.touch(put.id);
+        assertEquals(RTalk.TOUCHED, touch.status);
+        Job statsJob2 = rt.statsJob(put.id);
+        long readyTime2 = statsJob2.readyTime;
+        assertTrue(readyTime1 < readyTime2);
+        assertEquals(42000, readyTime2 - readyTime1);
     }
 
 }
