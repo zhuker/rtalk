@@ -138,6 +138,7 @@ public class RTalk extends RedisDao {
         public long readyTime;
         public long ctime;
         public long now;
+        public String error;
 
         /**
          * - "age" is the time in seconds since the put command that created
@@ -220,6 +221,9 @@ public class RTalk extends RedisDao {
     private static final String fReleases = "releases";
     private static final String fBuries = "buries";
     private static final String fKicks = "kicks";
+    
+    private static final String fBuryReason = "error";
+    
 
     private String kJob(String id) {
         return tube + "_" + id;
@@ -412,6 +416,7 @@ public class RTalk extends RedisDao {
         j.timeouts = toLong(job.get(fTimeouts));
         j.ctime = toLong(job.get(fCtime));
         j.now = now;
+        j.error = job.get(fBuryReason);
         return j;
     }
 
@@ -508,19 +513,26 @@ public class RTalk extends RedisDao {
      * - "NOT_FOUND\r\n" if the job does not exist or is not reserved by the
      * client.
      */
-    public synchronized Response bury(String id, long pri) {
+    public synchronized Response bury(String id, long pri, String reason) {
         if (contains(id)) {
             String data = withRedis(r -> r.hget(kJob(id), fData));
             return withRedisTransaction(tx -> {
                 tx.zrem(kReadyQueue(), id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, Job.BURIED);
+                if (reason != null) {
+                tx.hset(kJob(id), fBuryReason, reason);
+                }
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried(), System.currentTimeMillis(), id);
                 return on(new Response(BURIED, id, data));
             });
         }
         return new Response(NOT_FOUND, id);
+    }
+
+    public Response bury(String id, long pri) {
+        return bury(id, pri, null);
     }
 
     private String kBuried() {
@@ -605,7 +617,7 @@ public class RTalk extends RedisDao {
                 return r.zrangeByScore(kReadyQueue(), now, -1, 0, bound);
             }
         });
-        if (ids.isEmpty())
+        if (ids == null || ids.isEmpty())
             return 0;
 
         updateRedisTransaction(tx -> {
