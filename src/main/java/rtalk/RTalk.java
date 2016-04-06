@@ -221,9 +221,8 @@ public class RTalk extends RedisDao {
     private static final String fReleases = "releases";
     private static final String fBuries = "buries";
     private static final String fKicks = "kicks";
-    
+
     private static final String fBuryReason = "error";
-    
 
     private String kJob(String id) {
         return tube + "_" + id;
@@ -317,6 +316,7 @@ public class RTalk extends RedisDao {
         public String status;
         public String id;
         public String data;
+        public String error;
 
         public boolean isReserved() {
             return RESERVED.equals(status);
@@ -521,11 +521,13 @@ public class RTalk extends RedisDao {
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, Job.BURIED);
                 if (reason != null) {
-                tx.hset(kJob(id), fBuryReason, reason);
+                    tx.hset(kJob(id), fBuryReason, reason);
                 }
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried(), System.currentTimeMillis(), id);
-                return on(new Response(BURIED, id, data));
+                Response response = new Response(BURIED, id, data);
+                response.error = reason;
+                return on(response);
             });
         }
         return new Response(NOT_FOUND, id);
