@@ -51,10 +51,13 @@ public class RTalkTest {
         RTalk rt = new RTalk(jedisPool);
         Response put1 = rt.put(0, 0, 1000, "a");
         assertEquals(INSERTED, put1.status);
+        assertEquals(1, rt.statsTube().currentjobsready);
         Response reserve = rt.reserve();
         assertEquals(RESERVED, reserve.status);
         assertEquals(put1.id, reserve.id);
+        assertEquals(0, rt.statsTube().currentjobsready);
         Thread.sleep(1500);
+        assertEquals(1, rt.statsTube().currentjobsready);
 
         Response reserveAfterWorkerTimeout = rt.reserve();
         assertEquals(RESERVED, reserveAfterWorkerTimeout.status);
@@ -132,7 +135,11 @@ public class RTalkTest {
         Response put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
         assertEquals(BURIED, rt.bury(put.id, 0).status);
+        assertEquals(0, rt.statsTube().currentjobsready);
+        assertEquals(1, rt.statsTube().currentjobsburied);
         assertEquals(KICKED, rt.kickJob(put.id).status);
+        assertEquals(0, rt.statsTube().currentjobsburied);
+        assertEquals(1, rt.statsTube().currentjobsready);
         Response reserve = rt.reserve();
         assertEquals(RESERVED, reserve.status);
         assertEquals(put.id, reserve.id);

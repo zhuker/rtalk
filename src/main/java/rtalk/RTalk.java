@@ -1,5 +1,6 @@
 package rtalk;
 
+import static java.lang.Double.POSITIVE_INFINITY;
 import static java.lang.Long.signum;
 import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
@@ -299,6 +300,10 @@ public class RTalk extends RedisDao {
 
     public class Response {
         public final String tube;
+        public String status;
+        public String id;
+        public String data;
+        public String error;
 
         public Response(String status, String id) {
             this.status = status;
@@ -312,11 +317,6 @@ public class RTalk extends RedisDao {
             this.data = data;
             this.tube = getTube();
         }
-
-        public String status;
-        public String id;
-        public String data;
-        public String error;
 
         public boolean isReserved() {
             return RESERVED.equals(status);
@@ -341,29 +341,32 @@ public class RTalk extends RedisDao {
         @Override
         public String toString() {
             StringBuilder builder = new StringBuilder();
-            builder.append("{");
+            builder.append("{\"");
             if (tube != null) {
-                builder.append("\"tube\": '");
+                builder.append("tube\":\"");
                 builder.append(tube);
-                builder.append("'");
-            }
-
-            if (status != null) {
-                builder.append(", \"status\": '");
-                builder.append(status);
-                builder.append("'");
+                builder.append("\",\"");
             }
             if (id != null) {
-                builder.append(", \"id\": '");
+                builder.append("id\":\"");
                 builder.append(id);
-                builder.append("'");
+                builder.append("\",\"");
+            }
+            if (status != null) {
+                builder.append("status\":\"");
+                builder.append(status);
+                builder.append("\",\"");
+            }
+            if (error != null) {
+                builder.append("error\":\"");
+                builder.append(error);
+                builder.append("\",\"");
             }
             if (data != null) {
-                builder.append(", \"data\": '");
+                builder.append("data\":\"");
                 builder.append(data);
-                builder.append("'");
             }
-            builder.append("}");
+            builder.append("\"}");
             return builder.toString();
         }
     }
@@ -383,10 +386,10 @@ public class RTalk extends RedisDao {
 
         if (firstJob.isPresent()) {
             Job j = firstJob.get();
-            return withRedisTransaction(r -> {
-                r.hset(kJob(j.id), fState, Job.RESERVED);
-                r.zadd(kReadyQueue(), now + j.ttrMsec, j.id);
-                r.hincrBy(kJob(j.id), fReserves, 1);
+            return withRedisTransaction(tx -> {
+                tx.hset(kJob(j.id), fState, Job.RESERVED);
+                tx.zadd(kReadyQueue(), now + j.ttrMsec, j.id);
+                tx.hincrBy(kJob(j.id), fReserves, 1);
                 return on(new Response(RESERVED, j.id, j.data));
             });
         }
@@ -444,9 +447,9 @@ public class RTalk extends RedisDao {
             return new Response(NOT_FOUND, id);
         }
         String data = withRedis(r -> r.hget(kJob(id), fData));
-        return withRedisTransaction(r -> {
-            r.zrem(kReadyQueue(), id);
-            r.del(kJob(id));
+        return withRedisTransaction(tx -> {
+            tx.zrem(kReadyQueue(), id);
+            tx.del(kJob(id));
             return on(new Response(DELETED, id, data));
         });
     }
@@ -728,6 +731,78 @@ public class RTalk extends RedisDao {
 
     public Set<String> getIds() {
         return withRedis(r -> r.zrange(kReadyQueue(), 0, -1));
+    }
+
+    public static class StatsTube {
+        public String name;
+        public long currentjobsUrgent;
+        public long currentjobsready;
+        public long currentjobsreserved;
+        public long currentjobsdelayed;
+        public long currentjobsburied;
+        public long totaljobs;
+        public long currentusing;
+        public long currentwaiting;
+        public long currentwatching;
+        public long pause;
+        public long cmddelete;
+        public long cmdpausetube;
+        public long pausetimeleft;
+    }
+
+    /**
+     * The stats-tube data is a YAML file representing a single dictionary of
+     * strings to scalars. It contains these keys:
+     * 
+     * - "name" is the tube's name.
+     * 
+     * - "current-jobs-urgent" is the number of ready jobs with priority < 1024
+     * in this tube.
+     * 
+     * - "current-jobs-ready" is the number of jobs in the ready queue in this
+     * tube.
+     * 
+     * - "current-jobs-reserved" is the number of jobs reserved by all clients
+     * in this tube.
+     * 
+     * - "current-jobs-delayed" is the number of delayed jobs in this tube.
+     * 
+     * - "current-jobs-buried" is the number of buried jobs in this tube.
+     * 
+     * - "total-jobs" is the cumulative count of jobs created in this tube in
+     * the current beanstalkd process.
+     * 
+     * - "current-using" is the number of open connections that are currently
+     * using this tube.
+     * 
+     * - "current-waiting" is the number of open connections that have issued a
+     * reserve command while watching this tube but not yet received a response.
+     * 
+     * - "current-watching" is the number of open connections that are currently
+     * watching this tube.
+     * 
+     * - "pause" is the number of seconds the tube has been paused for.
+     * 
+     * - "cmd-delete" is the cumulative number of delete commands for this tube
+     * 
+     * - "cmd-pause-tube" is the cumulative number of pause-tube commands for
+     * this tube.
+     * 
+     * - "pause-time-left" is the number of seconds until the tube is un-paused.
+     */
+
+    public synchronized StatsTube statsTube() {
+        return withRedis(r -> {
+            StatsTube stats = new StatsTube();
+            stats.name = tube;
+            long now = System.currentTimeMillis();
+            stats.currentjobsready = r.zcount(kReadyQueue(), 0, now);
+            stats.currentjobsdelayed = r.zcount(kReadyQueue(), now, POSITIVE_INFINITY);
+            stats.currentjobsburied = r.zcard(kBuried());
+            
+//            stats.currentjobsreserved;
+            return stats;
+        });
     }
 
 }
