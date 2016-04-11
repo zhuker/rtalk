@@ -11,6 +11,8 @@ import static rtalk.RTalk.NOT_FOUND;
 import static rtalk.RTalk.RESERVED;
 import static rtalk.RTalk.TIMED_OUT;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.Before;
 import org.junit.Test;
@@ -92,11 +94,20 @@ public class RTalkTest {
 
     @Test
     public void testPutPriorityReserve() throws Exception {
-        RTalk rt = new RTalk(jedisPool);
+        RTalk rt = new RTalk(jedisPool)
+        {
+            AtomicInteger id = new AtomicInteger();
+
+            @Override
+            protected String newId() {
+                return "id" + id.getAndIncrement();
+            };
+        };
+
         Response put1 = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put1.status);
 
-        Response put2 = rt.put(0, 0, 0, "b");
+        Response put2 = rt.put(0, 1, 0, "b");
         assertEquals(INSERTED, put2.status);
 
         assertEquals(put1.id, rt.reserve().id);
