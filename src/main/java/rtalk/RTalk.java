@@ -183,7 +183,7 @@ public class RTalk extends RedisDao {
         }
         long _ttrMsec = Math.max(1000, ttrMsec);
         String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
-        return withRedisTransaction(r -> {
+        updateRedisTransaction(r -> {
             long now = System.currentTimeMillis();
             if (delayMsec > 0) {
                 long readyTimeMsec = now + delayMsec;
@@ -197,8 +197,8 @@ public class RTalk extends RedisDao {
             r.hset(kJob(id), fState, status);
             r.hset(kJob(id), fCtime, Long.toString(now));
             r.hset(kJob(id), fTube, tube);
-            return on(new Response(INSERTED, id, data));
         });
+        return on(new Response(INSERTED, id, data));
     }
 
     protected Response on(Response response) {
@@ -394,13 +394,13 @@ public class RTalk extends RedisDao {
 
         if (firstJob.isPresent()) {
             Job j = firstJob.get();
-            return withRedisTransaction(tx -> {
+            updateRedisTransaction(tx -> {
                 tx.hset(kJob(j.id), fState, Job.RESERVED);
                 tx.zrem(kReadyQueue, j.id);
                 tx.zadd(kDelayQueue, now + j.ttrMsec, j.id);
                 tx.hincrBy(kJob(j.id), fReserves, 1);
-                return on(new Response(RESERVED, j.id, j.data));
             });
+            return on(new Response(RESERVED, j.id, j.data));
         }
 
         return new Response(TIMED_OUT, null, null);
@@ -456,12 +456,12 @@ public class RTalk extends RedisDao {
             return new Response(NOT_FOUND, id);
         }
         String data = withRedis(r -> r.hget(kJob(id), fData));
-        return withRedisTransaction(tx -> {
+        updateRedisTransaction(tx -> {
             tx.zrem(kDelayQueue, id);
             tx.zrem(kReadyQueue, id);
             tx.del(kJob(id));
-            return on(new Response(DELETED, id, data));
         });
+        return on(new Response(DELETED, id, data));
     }
 
     /**
@@ -491,7 +491,7 @@ public class RTalk extends RedisDao {
      */
     public synchronized Response release(String id, long pri, long delayMsec) {
         if (contains(id)) {
-            return withRedisTransaction(tx -> {
+            updateRedisTransaction(tx -> {
                 if (delayMsec == 0) {
                     tx.zadd(kReadyQueue, pri, id);
                 }
@@ -499,8 +499,8 @@ public class RTalk extends RedisDao {
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, delayMsec > 0 ? Job.DELAYED : Job.READY);
                 tx.hincrBy(kJob(id), fReleases, 1);
-                return on(new Response(RELEASED, id));
             });
+            return on(new Response(RELEASED, id));
         }
         return new Response(NOT_FOUND, id);
     }
@@ -532,7 +532,7 @@ public class RTalk extends RedisDao {
     public synchronized Response bury(String id, long pri, String reason) {
         if (contains(id)) {
             String data = withRedis(r -> r.hget(kJob(id), fData));
-            return withRedisTransaction(tx -> {
+            updateRedisTransaction(tx -> {
                 tx.zrem(kReadyQueue, id);
                 tx.zrem(kDelayQueue, id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
@@ -542,10 +542,10 @@ public class RTalk extends RedisDao {
                 }
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried, System.currentTimeMillis(), id);
-                Response response = new Response(BURIED, id, data);
-                response.error = reason;
-                return on(response);
             });
+            Response response = new Response(BURIED, id, data);
+            response.error = reason;
+            return on(response);
         }
         return new Response(NOT_FOUND, id);
     }
@@ -636,12 +636,14 @@ public class RTalk extends RedisDao {
             return 0;
 
         Map<String, Long> priorities = withRedis(r -> {
-            return ids.stream().collect(toMap(id -> id, id -> _pri(r, id)));
+            Map<String, Long> collect = ids.stream().collect(toMap(id -> id, id -> _pri(r, id)));
+            return collect;
         });
 
         updateRedisTransaction(tx -> {
             for (String id : ids) {
                 _kickJob(id, now, tx, priorities.get(id));
+                on(new Response(KICKED, id));
             }
         });
         return ids.size();
@@ -681,7 +683,6 @@ public class RTalk extends RedisDao {
         tx.hset(kJob(id), fState, Job.READY);
         tx.hincrBy(kJob(id), fKicks, 1);
         tx.zadd(kReadyQueue, pri, id);
-        on(new Response(KICKED, id));
     }
 
     private boolean _isBuried(Jedis r, String id) {
