@@ -34,6 +34,9 @@ public class RTalk extends RedisDao {
     private String kReadyQueue;
     private String kDelayQueue;
     private String kBuried;
+    private String kDeleteCount;
+    private String kReserveCount;
+
     protected final String tube;
 
     public RTalk(JedisPool jedis) {
@@ -46,6 +49,8 @@ public class RTalk extends RedisDao {
         this.kReadyQueue = tube + "_readyQueue";
         this.kDelayQueue = tube + "_delayQueue";
         this.kBuried = tube + "_buried";
+        this.kDeleteCount = tube + "_deleted";
+        this.kReserveCount = tube + "_reserved";
     }
 
     public String getTube() {
@@ -399,6 +404,7 @@ public class RTalk extends RedisDao {
                 tx.zrem(kReadyQueue, j.id);
                 tx.zadd(kDelayQueue, now + j.ttrMsec, j.id);
                 tx.hincrBy(kJob(j.id), fReserves, 1);
+                tx.incr(kReserveCount);
             });
             return on(new Response(RESERVED, j.id, j.data));
         }
@@ -460,6 +466,8 @@ public class RTalk extends RedisDao {
             tx.zrem(kDelayQueue, id);
             tx.zrem(kReadyQueue, id);
             tx.del(kJob(id));
+            tx.incr(kDeleteCount);
+            tx.decr(kReserveCount);
         });
         return on(new Response(DELETED, id, data));
     }
@@ -498,6 +506,7 @@ public class RTalk extends RedisDao {
                 tx.zadd(kDelayQueue, System.currentTimeMillis() + delayMsec, id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, delayMsec > 0 ? Job.DELAYED : Job.READY);
+                tx.decr(kReserveCount);
                 tx.hincrBy(kJob(id), fReleases, 1);
             });
             return on(new Response(RELEASED, id));
@@ -537,6 +546,8 @@ public class RTalk extends RedisDao {
                 tx.zrem(kDelayQueue, id);
                 tx.hset(kJob(id), fPriority, Long.toString(pri));
                 tx.hset(kJob(id), fState, Job.BURIED);
+                tx.decr(kReserveCount);
+
                 if (reason != null) {
                     tx.hset(kJob(id), fBuryReason, reason);
                 }
@@ -813,9 +824,10 @@ public class RTalk extends RedisDao {
             stats.currentjobsready = r.zcard(kReadyQueue) + r.zcount(kDelayQueue, 0, now);
             stats.currentjobsdelayed = r.zcard(kDelayQueue);
             stats.currentjobsburied = r.zcard(kBuried);
+            stats.currentjobsreserved = toLong(r.get(kReserveCount));
             stats.totaljobs = r.zcard(kReadyQueue) + r.zcard(kDelayQueue);
+            stats.cmddelete = toLong(r.get(kDeleteCount));
 
-            //            stats.currentjobsreserved;
             return stats;
         });
     }
