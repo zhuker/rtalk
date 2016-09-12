@@ -170,12 +170,27 @@ public class RTalkTest {
         Response put = rt.put(0, 0, 42000, "a");
         Job statsJob = rt.statsJob(put.id);
         long readyTime1 = statsJob.readyTime;
+        long tolerance = 420;
+        System.out.println(readyTime1);
+        assertTrue(Math.abs(readyTime1 - System.currentTimeMillis()) < tolerance);
+
         Response touch = rt.touch(put.id);
         assertEquals(RTalk.TOUCHED, touch.status);
         Job statsJob2 = rt.statsJob(put.id);
         long readyTime2 = statsJob2.readyTime;
+        System.out.println(readyTime2);
         assertTrue(readyTime1 < readyTime2);
-        assertEquals(42000, readyTime2 - readyTime1);
+        assertTrue(Math.abs(readyTime2 - System.currentTimeMillis() - 42000) < tolerance);
+
+        Thread.sleep(420 + 420);
+
+        Response touch2 = rt.touch(put.id);
+        assertEquals(RTalk.TOUCHED, touch2.status);
+        Job statsJob3 = rt.statsJob(put.id);
+        long readyTime3 = statsJob3.readyTime;
+        System.out.println(readyTime3);
+        assertTrue(readyTime2 < readyTime3);
+        assertTrue(Math.abs(readyTime3 - System.currentTimeMillis() - 42000) < tolerance);
     }
 
 }

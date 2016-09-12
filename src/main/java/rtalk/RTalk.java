@@ -421,6 +421,8 @@ public class RTalk extends RedisDao {
         Double readyTime = r.zscore(kDelayQueue, id);
         if (readyTime != null) {
             j.readyTime = readyTime.longValue();
+        } else {
+            j.readyTime = toLong(job.get(fCtime));
         }
         j.tube = job.get(fTube);
         j.state = job.get(fState);
@@ -591,7 +593,7 @@ public class RTalk extends RedisDao {
         Job j = withRedis(r -> _getJob(r, id));
         if (j != null) {
             return withRedis(r -> {
-                r.zincrby(kDelayQueue, j.ttrMsec, id);
+                r.zadd(kDelayQueue, System.currentTimeMillis() + j.ttrMsec, id);
                 return on(new Response(TOUCHED, id, j.data));
             });
         }
