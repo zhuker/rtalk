@@ -165,6 +165,14 @@ public class RTalkTest {
     }
 
     @Test
+    public void testTouchNotReserved() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        Response put = rt.put(0, 0, 42000, "a");
+        Response touch = rt.touch(put.id);
+        assertEquals(RTalk.NOT_FOUND, touch.status);
+    }
+
+    @Test
     public void testTouch() throws Exception {
         RTalk rt = new RTalk(jedisPool);
         Response put = rt.put(0, 0, 42000, "a");
@@ -174,6 +182,8 @@ public class RTalkTest {
         System.out.println(readyTime1);
         assertTrue(Math.abs(readyTime1 - System.currentTimeMillis()) < tolerance);
 
+        assertTrue(rt.reserve().isReserved());
+        
         Response touch = rt.touch(put.id);
         assertEquals(RTalk.TOUCHED, touch.status);
         Job statsJob2 = rt.statsJob(put.id);
