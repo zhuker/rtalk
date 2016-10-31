@@ -426,6 +426,11 @@ public class RTalk extends RedisDao {
         }
         j.tube = job.get(fTube);
         j.state = job.get(fState);
+        if (Job.DELAYED.equals(j.state) || Job.RESERVED.equals(j.state)) {
+            if (j.readyTime <= now) {
+                j.state = Job.READY;
+            }
+        }
         j.pri = toLong(job.get(fPriority));
         j.data = job.get(fData);
         j.ttrMsec = toLong(job.get(fTtr));
@@ -823,13 +828,15 @@ public class RTalk extends RedisDao {
             StatsTube stats = new StatsTube();
             stats.name = tube;
             long now = System.currentTimeMillis();
-            stats.currentjobsready = r.zcard(kReadyQueue) + r.zcount(kDelayQueue, 0, now);
-            stats.currentjobsdelayed = r.zcard(kDelayQueue);
-            stats.currentjobsburied = r.zcard(kBuried);
+            long zkReadyQueue = toLong(r.zcard(kReadyQueue));
+            long zkBuried = toLong(r.zcard(kBuried));
+            long zkDeleteCount = toLong(r.get(kDeleteCount));
+            stats.currentjobsready = zkReadyQueue + r.zcount(kDelayQueue, 0, now);
+            stats.currentjobsdelayed = r.zcount(kDelayQueue, now + 1, Double.POSITIVE_INFINITY);
+            stats.currentjobsburied = zkBuried;
             stats.currentjobsreserved = toLong(r.get(kReserveCount));
-            stats.totaljobs = r.zcard(kReadyQueue) + r.zcard(kDelayQueue);
-            stats.cmddelete = toLong(r.get(kDeleteCount));
-
+            stats.totaljobs = zkReadyQueue + r.zcard(kDelayQueue) + zkBuried + zkDeleteCount;
+            stats.cmddelete = zkDeleteCount;
             return stats;
         });
     }

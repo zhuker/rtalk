@@ -11,6 +11,8 @@ import static rtalk.RTalk.NOT_FOUND;
 import static rtalk.RTalk.RESERVED;
 import static rtalk.RTalk.TIMED_OUT;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
@@ -60,11 +62,20 @@ public class RTalkTest {
         assertEquals(0, rt.statsTube().currentjobsready);
         Thread.sleep(1500);
         assertEquals(1, rt.statsTube().currentjobsready);
+        
+        long now = System.currentTimeMillis();
+        Job statsJob = rt.statsJob(put1.id);
+        System.out.println(date(now)+" "+ date(statsJob.readyTime));
+        assertEquals(Job.READY, statsJob.state);
 
         Response reserveAfterWorkerTimeout = rt.reserve();
         assertEquals(RESERVED, reserveAfterWorkerTimeout.status);
         assertEquals(put1.id, reserveAfterWorkerTimeout.id);
 
+    }
+
+    private static String date(long readyTime) {
+        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date(readyTime));
     }
 
     @Test
@@ -138,6 +149,10 @@ public class RTalkTest {
         Response put = rt.put(0, 1000, 0, expectedData);
         assertEquals(INSERTED, put.status);
         assertTrue(isNotBlank(put.id));
+        Thread.sleep(1100);
+        assertEquals(1, rt.statsTube().currentjobsready);
+        assertEquals(0, rt.statsTube().currentjobsdelayed);
+
     }
 
     @Test
