@@ -14,22 +14,15 @@
 				<enabled>false</enabled>
 			</snapshots>
 		</repository>
-		<repository>
-			<id>DropboxM2</id>
-			<url>file://${user.home}/Dropbox/m2/repository</url>
-		</repository>
 	</repositories>
-	<distributionManagement>
-		<repository>
-			<uniqueVersion>false</uniqueVersion>
-			<id>DropboxM2</id>
-			<name>Corporate Repository</name>
-			<url>file://${user.home}/Dropbox/m2/repository</url>
-			<layout>default</layout>
-		</repository>
-	</distributionManagement>
-
 	<build>
+		<extensions>
+			<extension>
+				<groupId>org.apache.maven.wagon</groupId>
+				<artifactId>wagon-ssh-external</artifactId>
+				<version>1.0-beta-6</version>
+			</extension>
+		</extensions>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
