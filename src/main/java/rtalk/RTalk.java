@@ -203,7 +203,7 @@ public class RTalk extends RedisDao {
             r.hset(kJob(id), fCtime, Long.toString(now));
             r.hset(kJob(id), fTube, tube);
         });
-        return on(new Response(INSERTED, id, data));
+        return on(new Response(INSERTED, id, data, tube));
     }
 
     protected Response on(Response response) {
@@ -293,24 +293,24 @@ public class RTalk extends RedisDao {
         return reserve(0);
     }
 
-    public class Response {
+    public static class Response {
         public final String tube;
         public String status;
         public String id;
         public String data;
         public String error;
 
-        public Response(String status, String id) {
+        public Response(String status, String id, String tube) {
             this.status = status;
             this.id = id;
-            this.tube = getTube();
+            this.tube = tube;
         }
 
-        public Response(String status, String id, String data) {
+        public Response(String status, String id, String data, String tube) {
             this.status = status;
             this.id = id;
             this.data = data;
-            this.tube = getTube();
+            this.tube = tube;
         }
 
         public boolean isReserved() {
@@ -406,10 +406,10 @@ public class RTalk extends RedisDao {
                 tx.hincrBy(kJob(j.id), fReserves, 1);
                 tx.incr(kReserveCount);
             });
-            return on(new Response(RESERVED, j.id, j.data));
+            return on(new Response(RESERVED, j.id, j.data, tube));
         }
 
-        return new Response(TIMED_OUT, null, null);
+        return new Response(TIMED_OUT, null, null, tube);
     }
 
     private Job _getJob(Jedis r, String id) {
@@ -466,7 +466,7 @@ public class RTalk extends RedisDao {
      */
     public synchronized Response delete(String id) {
         if (!contains(id)) {
-            return new Response(NOT_FOUND, id);
+            return new Response(NOT_FOUND, id, tube);
         }
         String data = withRedis(r -> r.hget(kJob(id), fData));
         updateRedisTransaction(tx -> {
@@ -476,7 +476,7 @@ public class RTalk extends RedisDao {
             tx.incr(kDeleteCount);
             tx.decr(kReserveCount);
         });
-        return on(new Response(DELETED, id, data));
+        return on(new Response(DELETED, id, data, tube));
     }
 
     /**
@@ -516,9 +516,9 @@ public class RTalk extends RedisDao {
                 tx.decr(kReserveCount);
                 tx.hincrBy(kJob(id), fReleases, 1);
             });
-            return on(new Response(RELEASED, id));
+            return on(new Response(RELEASED, id, tube));
         }
-        return new Response(NOT_FOUND, id);
+        return new Response(NOT_FOUND, id, tube);
     }
 
     public synchronized boolean contains(String id) {
@@ -561,11 +561,11 @@ public class RTalk extends RedisDao {
                 tx.hincrBy(kJob(id), fBuries, 1);
                 tx.zadd(kBuried, System.currentTimeMillis(), id);
             });
-            Response response = new Response(BURIED, id, data);
+            Response response = new Response(BURIED, id, data, tube);
             response.error = reason;
             return on(response);
         }
-        return new Response(NOT_FOUND, id);
+        return new Response(NOT_FOUND, id, tube);
     }
 
     public Response bury(String id, long pri) {
@@ -599,10 +599,10 @@ public class RTalk extends RedisDao {
         if (j != null && Job.RESERVED.equals(j.state)) {
             return withRedis(r -> {
                 r.zadd(kDelayQueue, System.currentTimeMillis() + j.ttrMsec, id);
-                return on(new Response(TOUCHED, id, j.data));
+                return on(new Response(TOUCHED, id, j.data, tube));
             });
         }
-        return new Response(NOT_FOUND, id);
+        return new Response(NOT_FOUND, id, tube);
     }
 
     public static long toLong(Object object) {
@@ -661,7 +661,7 @@ public class RTalk extends RedisDao {
         updateRedisTransaction(tx -> {
             for (String id : ids) {
                 _kickJob(id, now, tx, priorities.get(id));
-                on(new Response(KICKED, id));
+                on(new Response(KICKED, id, tube));
             }
         });
         return ids.size();
@@ -690,9 +690,9 @@ public class RTalk extends RedisDao {
                 long pri = _pri(r, id);
                 long now = System.currentTimeMillis();
                 updateRedisTransaction(tx -> _kickJob(id, now, tx, pri));
-                return on(new Response(KICKED, id));
+                return on(new Response(KICKED, id, tube));
             }
-            return new Response(NOT_FOUND, id);
+            return new Response(NOT_FOUND, id, tube);
         });
     }
 
