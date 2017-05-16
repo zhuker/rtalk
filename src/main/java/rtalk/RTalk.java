@@ -184,7 +184,7 @@ public class RTalk extends RedisDao {
 
     public synchronized Response putWithId(String id, long pri, long delayMsec, long ttrMsec, String data) {
         if (contains(id)) {
-            return bury(id, pri);
+            throw new IllegalArgumentException("trying to insert already existing id " + id);
         }
         long _ttrMsec = Math.max(1000, ttrMsec);
         String status = delayMsec > 0 ? Job.DELAYED : Job.READY;
