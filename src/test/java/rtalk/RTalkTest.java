@@ -190,7 +190,8 @@ public class RTalkTest {
     @Test
     public void testTouch() throws Exception {
         RTalk rt = new RTalk(jedisPool);
-        Response put = rt.put(0, 0, 42000, "a");
+        int ttrMsec = 42000;
+        Response put = rt.put(0, 0, ttrMsec, "a");
         Job statsJob = rt.statsJob(put.id);
         long readyTime1 = statsJob.readyTime;
         long tolerance = 420;
@@ -205,7 +206,7 @@ public class RTalkTest {
         long readyTime2 = statsJob2.readyTime;
         System.out.println(readyTime2);
         assertTrue(readyTime1 < readyTime2);
-        assertTrue(Math.abs(readyTime2 - System.currentTimeMillis() - 42000) < tolerance);
+        assertTrue(Math.abs(readyTime2 - System.currentTimeMillis() - ttrMsec) < tolerance);
 
         Thread.sleep(420 + 420);
 
@@ -215,7 +216,20 @@ public class RTalkTest {
         long readyTime3 = statsJob3.readyTime;
         System.out.println(readyTime3);
         assertTrue(readyTime2 < readyTime3);
-        assertTrue(Math.abs(readyTime3 - System.currentTimeMillis() - 42000) < tolerance);
+        assertTrue(Math.abs(readyTime3 - System.currentTimeMillis() - ttrMsec) < tolerance);
     }
-
+    
+    @Test
+    public void testTouchKeepsJobReserved() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        int ttrMsec = 1000;
+        Response put = rt.put(0, 0, ttrMsec, "a");
+        assertTrue(rt.reserve().isReserved());
+        Thread.sleep(500);
+        assertEquals(RTalk.TOUCHED, rt.touch(put.id).status);
+        Thread.sleep(900);
+        
+        Job statsJob2 = rt.statsJob(put.id);
+        assertEquals(Job.RESERVED, statsJob2.state);
+    }
 }
