@@ -388,7 +388,7 @@ public class RTalk extends RedisDao {
                 }
             }
 
-            Set<String> ids = r.zrange(kReadyQueue, 0, 0);
+            Set<String> ids = r.zrange(kReadyQueue, 0, -1);
             Optional<Job> firstJob_ = ids
                     .stream()
                     .map(id -> _getJob(r, id))
