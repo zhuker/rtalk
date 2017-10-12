@@ -3,6 +3,8 @@ package rtalk;
 import static java.util.UUID.randomUUID;
 import static java.util.stream.Collectors.toMap;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -566,10 +568,17 @@ public class RTalk {
         }
         return new Response(NOT_FOUND, id, tube);
     }
-
-    public Response bury(String id, long pri) {
-        return bury(id, pri, null);
+    
+    public synchronized Response bury(String id, long pri, Throwable e) {
+        if (e != null) {
+            StringWriter stringWriter = new StringWriter();
+            e.printStackTrace(new PrintWriter(stringWriter));
+            String reason = stringWriter.toString();
+            return bury(id, pri, reason);
+        }
+        return bury(id, pri, "");
     }
+
 
     /**
      * The "touch" command allows a worker to request more time to work on a
@@ -862,7 +871,7 @@ public class RTalk {
             }
             try {
                 long retryMsec = (1 << attempt) * 100L;
-                System.err.println("retry getRedis in " + retryMsec + " because " + lastError);
+                System.err.println("retry RTalk.getRedis in " + retryMsec + " because " + lastError);
                 Thread.sleep(retryMsec);
             } catch (InterruptedException e) {
                 e.printStackTrace();

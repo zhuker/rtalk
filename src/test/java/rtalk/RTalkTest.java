@@ -160,7 +160,7 @@ public class RTalkTest {
         RTalk rt = new RTalk(jedisPool);
         Response put = rt.put(0, 0, 0, "a");
         assertEquals(INSERTED, put.status);
-        assertEquals(BURIED, rt.bury(put.id, 0).status);
+        assertEquals(BURIED, rt.bury(put.id, 0, "reason").status);
         assertEquals(0, rt.statsTube().currentjobsready);
         assertEquals(1, rt.statsTube().currentjobsburied);
         assertEquals(KICKED, rt.kickJob(put.id).status);
