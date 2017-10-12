@@ -1,22 +1,20 @@
 package rtalk;
 
-import static java.lang.Double.POSITIVE_INFINITY;
-import static java.util.Base64.getUrlEncoder;
 import static java.util.UUID.randomUUID;
 import static java.util.stream.Collectors.toMap;
 
-import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Transaction;
 
-public class RTalk extends RedisDao {
+public class RTalk {
 
     public static final String KICKED = "KICKED";
     public static final String DELETED = "DELETED";
@@ -38,13 +36,14 @@ public class RTalk extends RedisDao {
     private String kReserveCount;
 
     protected final String tube;
+    protected final JedisPool pool;
 
     public RTalk(JedisPool jedis) {
         this(jedis, "default");
     }
 
     public RTalk(JedisPool jedis, String tube) {
-        super(jedis);
+        this.pool = jedis;
         this.tube = tube;
         this.kReadyQueue = tube + "_readyQueue";
         this.kDelayQueue = tube + "_delayQueue";
@@ -841,4 +840,66 @@ public class RTalk extends RedisDao {
         });
     }
 
+
+
+    protected <T> T withRedis(Function<Jedis, T> r) {
+        Jedis redis = getRedis();
+        try {
+            return r.apply(redis);
+        } finally {
+            redis.close();
+        }
+    }
+
+    protected Jedis getRedis() {
+        int attempt = 0;
+        Exception lastError = null;
+        do {
+            try {
+                return pool.getResource();
+            } catch (Exception e) {
+                lastError = e;
+            }
+            try {
+                long retryMsec = (1 << attempt) * 100L;
+                System.err.println("retry getRedis in " + retryMsec + " because " + lastError);
+                Thread.sleep(retryMsec);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        } while (attempt++ < 5);
+        if (lastError instanceof RuntimeException) {
+            throw (RuntimeException) lastError;
+        }
+        throw new RuntimeException(lastError);
+    }
+
+    protected void updateRedisTransaction(Consumer<Transaction> r) {
+        withRedisTransaction(r, (Runnable) null);
+    }
+    
+    protected void withRedisTransaction(Consumer<Transaction> r, Runnable onOk) {
+        Jedis redis = getRedis();
+        Transaction transaction = null;
+        try {
+            transaction = redis.multi();
+            r.accept(transaction);
+            transaction.exec();
+            transaction = null;
+            if (onOk != null) {
+                onOk.run();
+            }
+        } finally {
+            rollback(transaction);
+            redis.close();
+        }
+    }
+
+    private static void rollback(Transaction transaction) {
+        if (transaction != null) {
+            transaction.discard();
+        }
+    }
 }
