@@ -1,6 +1,7 @@
 package rtalk;
 
 import static java.util.UUID.randomUUID;
+import static java.util.logging.Level.SEVERE;
 import static java.util.stream.Collectors.toMap;
 
 import java.io.PrintWriter;
@@ -11,12 +12,15 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.logging.Logger;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Transaction;
 
 public class RTalk {
+    //java util logging is used here to introduce no external dependencies
+    private final static Logger log = Logger.getLogger(RTalk.class.getName());
 
     public static final String KICKED = "KICKED";
     public static final String DELETED = "DELETED";
@@ -212,7 +216,8 @@ public class RTalk {
     }
 
     private static final String fTube = "tube";
-    private static final String fState = "state";
+    //VisibleForTesting
+    static final String fState = "state";
     private static final String fPriority = "pri";
     private static final String fReserves = "reserves";
     private static final String fCtime = "ctime";
@@ -225,7 +230,8 @@ public class RTalk {
 
     private static final String fBuryReason = "error";
 
-    private String kJob(String id) {
+    //VisibleForTesting
+    String kJob(String id) {
         return tube + "_" + id;
     }
 
@@ -393,10 +399,19 @@ public class RTalk {
             Optional<Job> firstJob_ = ids
                     .stream()
                     .map(id -> _getJob(r, id))
-                    .filter(j -> j != null && !Job.BURIED.equals(j.state))
+                    .filter(j -> {
+                        boolean ok = j != null && !Job.BURIED.equals(j.state);
+                        if (j == null) {
+                            log.log(SEVERE, "data corruption detected on tube " + tube + " job == null in ready queue "
+                                    + kReadyQueue);
+                        } else if (Job.BURIED.equals(j.state)) {
+                            log.log(SEVERE, "data corruption detected on tube " + tube + " job " + j.id
+                                    + " is BURIED but in ready queue " + kReadyQueue);
+                        }
+                        return ok;
+                    })
                     .findFirst();
             if (!firstJob_.isPresent() && (readyQueueSize != 0 || toLong(r.zcard(kReadyQueue)) != 0)) {
-                System.err.println("data corruption detected on tube " + tube);
                 ids = r.zrange(kReadyQueue, 0, -1);
                 firstJob_ = ids
                         .stream()

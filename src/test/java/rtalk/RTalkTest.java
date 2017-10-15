@@ -14,6 +14,7 @@ import static rtalk.RTalk.TIMED_OUT;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.Before;
@@ -231,5 +232,30 @@ public class RTalkTest {
         
         Job statsJob2 = rt.statsJob(put.id);
         assertEquals(Job.RESERVED, statsJob2.state);
+    }
+    
+    @Test
+    public void testDataCorruption() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        Response a = rt.put(0, 0, 1000, "a");
+        Response b = rt.put(1, 0, 1000, "b");
+
+        //emulate data corruption
+        jedisPool.getResource().del(rt.kJob(a.id));
+        Response reserve = rt.reserve();
+        assertEquals(b.id, reserve.id);
+    }
+    
+    @Test
+    public void testDataCorruptionBuried() throws Exception {
+        RTalk rt = new RTalk(jedisPool);
+        Response a = rt.put(0, 0, 1000, "a");
+        Response b = rt.put(1, 0, 1000, "b");
+        
+        //emulate data corruption
+        jedisPool.getResource().hset(rt.kJob(a.id), RTalk.fState, Job.BURIED);
+        
+        Response reserve = rt.reserve();
+        assertEquals(b.id, reserve.id);
     }
 }
