@@ -389,12 +389,22 @@ public class RTalk {
                 }
             }
 
-            Set<String> ids = r.zrange(kReadyQueue, 0, -1);
+            Set<String> ids = r.zrange(kReadyQueue, 0, 0);
             Optional<Job> firstJob_ = ids
                     .stream()
                     .map(id -> _getJob(r, id))
                     .filter(j -> j != null && !Job.BURIED.equals(j.state))
                     .findFirst();
+            if (!firstJob_.isPresent() && (readyQueueSize != 0 || toLong(r.zcard(kReadyQueue)) != 0)) {
+                System.err.println("data corruption detected on tube " + tube);
+                ids = r.zrange(kReadyQueue, 0, -1);
+                firstJob_ = ids
+                        .stream()
+                        .map(id -> _getJob(r, id))
+                        .filter(j -> j != null && !Job.BURIED.equals(j.state))
+                        .findFirst();
+
+            }
             return firstJob_;
         });
 
